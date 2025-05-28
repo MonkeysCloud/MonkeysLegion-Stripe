@@ -1,0 +1,79 @@
+{
+  "name": "monkeyscloud/monkeyslegion-stripe",
+  "description": "First-class Stripe integration package for the MonkeysLegion framework.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "stripe",
+    "payment",
+    "monkeyslegion",
+    "checkout",
+    "subscriptions",
+    "billing",
+    "psr"
+  ],
+  "authors": [
+    {
+      "name": "MonkeysCloud Team",
+      "email": "team@monkeys.cloud",
+      "homepage": "https://monkeys.cloud"
+    }
+  ],
+  "require": {
+    "php": "^8.4",
+    "stripe/stripe-php": "^12.1",
+    "monkeyscloud/monkeyslegion-core": "^1.0@dev",
+    "psr/container": "^2.0",
+    "psr/http-client": "^1.0",
+    "psr/http-factory": "^1.0",
+    "psr/log": "^3.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.2",
+    "fakerphp/faker": "^1.25",
+    "stripe/stripe-mock": "^0.183.0",
+    "phpstan/phpstan": "^1.11",
+    "friendsofphp/php-cs-fixer": "^3.52",
+    "infection/infection": "^0.33"
+  },
+  "autoload": {
+    "psr-4": {
+      "MonkeysLegion\\Stripe\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MonkeysLegion\\Stripe\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit",
+    "analyse": "vendor/bin/phpstan analyse",
+    "cs-fix": "vendor/bin/php-cs-fixer fix --diff",
+    "infection": "vendor/bin/infection --threads=max",
+    "pre-update-cmd": [
+      "MonkeysLegion\\Stripe\\Composer\\Scripts::validateConfig"
+    ]
+  },
+  "config": {
+    "sort-packages": true,
+    "platform": {
+      "php": "8.2.999"
+    },
+    "optimize-autoloader": true
+  },
+  "extra": {
+    "monkeyslegion": {
+      "service-provider": "MonkeysLegion\\\\Stripe\\\\Provider\\\\StripeServiceProvider"
+    },
+    "branch-alias": {
+      "dev-main": "1.x-dev"
+    }
+  },
+  "suggest": {
+    "ext-curl": "Needed for the default HTTP client used by stripe/stripe-php.",
+    "guzzlehttp/guzzle": "If you prefer Guzzle as your PSR-18 HTTP client implementation."
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
