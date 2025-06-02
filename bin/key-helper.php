@@ -1,6 +1,6 @@
 <?php
 
-define('KEY_FILE', __DIR__ . '/../.keys/.env'); // Changed from local_key.txt to .env
+define('KEY_FILE', getcwd() . '/../.env');
 
 function generateKey(int $length = 32): string
 {
@@ -47,7 +47,7 @@ function readKey(string $keyName = 'APP_KEY'): ?string
     }
     $lines = file(KEY_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue; // skip comments
+        if (strpos(trim($line), '#') === 0) continue;
         if (strpos($line, '=') !== false) {
             list($k, $v) = explode('=', $line, 2);
             if (trim($k) === $keyName) {
@@ -73,19 +73,41 @@ function printUsage()
     echo "  key-helper.php show [KEY_NAME]       # Show the current key" . PHP_EOL;
 }
 
-// CLI argument handling
+// Allowed key names and their aliases
+const ALLOWED_KEYS = [
+    'secret'      => 'STRIPE_SECRET_KEY',
+    'publishable' => 'STRIPE_PUBLISHABLE_KEY',
+    'webhook'     => 'STRIPE_WEBHOOK_SECRET'
+];
+
 if ($argc < 2) {
     printUsage();
     exit(1);
 }
 
-$command = $argv[1];
-$keyName = $argv[2] ?? 'APP_KEY';
+$command = strtolower($argv[1]);
+$keyAlias = isset($argv[2]) ? strtolower($argv[2]) : null;
+$keyName = null;
+
+// Validate key alias for commands that require it
+if (in_array($command, ['generate', 'rotate', 'validate', 'show'])) {
+    if ($keyAlias === null) {
+        echo "You must specify a key type: secret, publishable, or webhook.\n";
+        printUsage();
+        exit(1);
+    }
+    if (!array_key_exists($keyAlias, ALLOWED_KEYS)) {
+        echo "Invalid key type: $keyAlias\n";
+        echo "Allowed types: secret, publishable, webhook\n";
+        exit(1);
+    }
+    $keyName = ALLOWED_KEYS[$keyAlias];
+}
 
 switch ($command) {
     case 'generate':
         $key = generateKey();
-        saveKey($key, strtoupper($keyName));
+        saveKey($key, $keyName);
         echo "Generated key ($keyName): $key" . PHP_EOL;
         break;
 
