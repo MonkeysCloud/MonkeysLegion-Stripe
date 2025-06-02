@@ -39,7 +39,10 @@
   "autoload": {
     "psr-4": {
       "MonkeysLegion\\Stripe\\": "src/"
-    }
+    },
+    "files": [
+      "/src/Config/merge.php"
+    ]
   },
   "autoload-dev": {
     "psr-4": {

@@ -17,7 +17,7 @@ class StripeServiceProvider
         $this->c = $container;
 
         $config = require __DIR__ . '/../../config/stripe.php' ?? [];
-        $appOverrides = $this->c->get('config')['stripe'] ?? [];
+        $appOverrides = require getcwd() . '/../config/stripe.php' ?? [];
 
         $this->config = mergeStripeConfig($config, $appOverrides);
     }
