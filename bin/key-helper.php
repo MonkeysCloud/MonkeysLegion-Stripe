@@ -1,6 +1,6 @@
 <?php
 
-define('KEY_FILE', getcwd() . '/../.env');
+define('KEY_FILE', getcwd() . '/.env');
 
 function generateKey(int $length = 32): string
 {
