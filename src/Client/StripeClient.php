@@ -38,7 +38,7 @@ class StripeClient
         try {
             return $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            throw $e;
+            throw new \RuntimeException($e->getMessage());
         }
     }
 }
