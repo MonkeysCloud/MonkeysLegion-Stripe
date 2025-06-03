@@ -2,11 +2,28 @@
 
 namespace MonkeysLegion\Stripe\Client;
 
+use Exception;
 use GuzzleHttp\Client as GuzzleClient;
 use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Client\ClientExceptionInterface;
+use GuzzleHttp\Exception\GuzzleException;
 
 class HttpClient implements ClientInterface
 {
+    protected GuzzleClient $client;
+
+    /**
+     * HttpClient constructor.
+     *
+     * @param array $config Optional Guzzle configuration
+     */
+    public function __construct(array $config = [])
+    {
+        $this->client = new GuzzleClient($config);
+    }
+
     /**
      * Create a new HTTP client instance.
      *
@@ -25,10 +42,12 @@ class HttpClient implements ClientInterface
      * @return \Psr\Http\Message\ResponseInterface
      * @throws \Psr\Http\Client\ClientExceptionInterface if an error happens while processing the request
      */
-    public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
+    public function sendRequest(RequestInterface $request): ResponseInterface
     {
-        // This method should be implemented to send the request using Guzzle or any other HTTP client.
-        // For now, we will throw an exception to indicate that this method needs to be implemented.
-        throw new \RuntimeException('Method sendRequest not implemented.');
+        try {
+            return $this->client->send($request);
+        } catch (GuzzleException $e) {
+            throw new class($e->getMessage(), $e->getCode(), $e) extends Exception implements ClientExceptionInterface {};
+        }
     }
 }
