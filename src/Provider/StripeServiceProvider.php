@@ -28,14 +28,15 @@ class StripeServiceProvider
      */
     public function register(): void
     {
-        // Register the HTTP client
-        $this->c->set('http_client', function () {
+        // Register the HTTP client For Only Stripe
+        // This is a separate HTTP client specifically for Stripe operations
+        $this->c->set('stripe_http_client', function () {
             return HttpClient::create($this->config);
         });
 
-        // Register the Stripe client with the HTTP client injected
+        // Register the Stripe client with the Stripe HTTP client injected
         $this->c->set('StripeClient', function () {
-            return new StripeClient($this->c->get('http_client'));
+            return new StripeClient($this->c->get('stripe_http_client'));
         });
     }
 }
