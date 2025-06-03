@@ -1,6 +1,5 @@
 # Composer dependencies
 /vendor/
-/composer.lock
 
 # Build / distribution artifacts
 /build/
