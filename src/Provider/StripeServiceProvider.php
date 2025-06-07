@@ -2,10 +2,10 @@
 
 namespace MonkeysLegion\Stripe\Provider;
 
-use MonkeysLegion\Stripe\Client\StripeClient;
-use MonkeysLegion\Stripe\Client\HttpClient;
+use MonkeysLegion\Stripe\Client\SetupIntentService;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
-
+use MonkeysLegion\Stripe\Webhook\WebhookController;
+use Stripe\StripeClient;
 
 class StripeServiceProvider
 {
@@ -17,8 +17,10 @@ class StripeServiceProvider
         $this->c = $container;
 
         $config = require __DIR__ . '/../../config/stripe.php' ?? [];
-        $appOverrides = require getcwd() . '/../config/stripe.php' ?? [];
-
+        $appOverrides = file_exists(getcwd() . '/config/stripe.php') 
+            ? require getcwd() . '/config/stripe.php' 
+            : [];
+        
         $this->config = mergeStripeConfig($config, $appOverrides);
     }
 
@@ -28,15 +30,19 @@ class StripeServiceProvider
      */
     public function register(): void
     {
-        // Register the HTTP client For Only Stripe
-        // This is a separate HTTP client specifically for Stripe operations
-        $this->c->set('stripe_http_client', function () {
-            return HttpClient::create($this->config);
+        // Register the official Stripe client
+        $this->c->set('stripe_client', function () {
+            return new StripeClient($this->config['test_key']);
         });
 
-        // Register the Stripe client with the Stripe HTTP client injected
-        $this->c->set('StripeClient', function () {
-            return new StripeClient($this->c->get('stripe_http_client'));
+        // Register the Stripe Gateway with the official client injected
+        $this->c->set('StripeServices', function () {
+            return new SetupIntentService($this->c->get('stripe_client'));
+        });
+
+        // Register the Stripe Webhook controller
+        $this->c->set('StripeWebhook', function () {
+            return new WebhookController($this->config['webhook_secret']);
         });
     }
 }

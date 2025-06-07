@@ -28,11 +28,11 @@ class HttpClient implements ClientInterface
      * Create a new HTTP client instance.
      *
      * @param array $config Optional Guzzle configuration
-     * @return GuzzleClient
+     * @return HttpClient
      */
-    public static function create(array $config = [])
+    public static function create(array $config = []): HttpClient
     {
-        return new GuzzleClient($config);
+        return new self($config);
     }
 
     /**
