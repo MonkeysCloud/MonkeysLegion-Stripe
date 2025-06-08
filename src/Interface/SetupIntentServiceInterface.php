@@ -8,7 +8,7 @@ interface SetupIntentServiceInterface
     /**
      * Create a new Setup Intent
      *
-     * @param array $params Parameters for the Setup Intent
+     * @param array<string, mixed> $params Parameters for the Setup Intent
      * @return \Stripe\SetupIntent
      */
     public function createSetupIntent(array $params): \Stripe\SetupIntent;
@@ -25,7 +25,7 @@ interface SetupIntentServiceInterface
      * Confirm a Setup Intent
      *
      * @param string $setupIntentId The ID of the Setup Intent to confirm
-     * @param array $params Parameters for confirming the Setup Intent
+     * @param array<string, mixed> $params Parameters for confirming the Setup Intent
      * @return \Stripe\SetupIntent
      */
     public function confirmSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent;
@@ -42,8 +42,8 @@ interface SetupIntentServiceInterface
     /**
      * List Setup Intents
      *
-     * @param array $params Optional parameters for listing Setup Intents
-     * @return \Stripe\Collection
+     * @param array<string, mixed> $params Optional parameters for listing Setup Intents
+     * @return \Stripe\Collection<\Stripe\SetupIntent>
      */
     public function listSetupIntents(array $params = []): \Stripe\Collection;
 
@@ -51,7 +51,7 @@ interface SetupIntentServiceInterface
      * Update a Setup Intent
      *
      * @param string $setupIntentId The ID of the Setup Intent to update
-     * @param array $params Parameters for updating the Setup Intent
+     * @param array<string, mixed> $params Parameters for updating the Setup Intent
      * @return \Stripe\SetupIntent
      */
     public function updateSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent;

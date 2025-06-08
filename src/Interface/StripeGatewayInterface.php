@@ -28,35 +28,17 @@ interface StripeGatewayInterface
      * Confirm a PaymentIntent.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to confirm.
-     * @param array $options Optional parameters for the confirmation.
+     * @param array<string, mixed> $options Optional parameters for the confirmation.
      * @return \Stripe\PaymentIntent
      * @throws \Exception if the confirmation fails
      */
     public function confirmPaymentIntent(string $paymentIntentId, array $options = []): \Stripe\PaymentIntent;
 
     /**
-     * Cancel a PaymentIntent.
-     *
-     * @param string $paymentIntentId The ID of the PaymentIntent to cancel.
-     * @return \Stripe\PaymentIntent
-     * @throws \Exception if the cancellation fails
-     */
-    public function cancelPaymentIntent(string $paymentIntentId): \Stripe\PaymentIntent;
-
-    /**
-     * Capture a PaymentIntent.
-     *
-     * @param string $paymentIntentId The ID of the PaymentIntent to capture.
-     * @return \Stripe\PaymentIntent
-     * @throws \Exception if the capture fails
-     */
-    public function capturePaymentIntent(string $paymentIntentId): \Stripe\PaymentIntent;
-
-    /**
      * Refund a PaymentIntent.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to refund.
-     * @param array $options Optional parameters for the refund.
+     * @param array<string, mixed> $options Optional parameters for the refund.
      * @return \Stripe\Refund
      * @throws \Exception if the refund fails
      */
@@ -65,8 +47,8 @@ interface StripeGatewayInterface
     /**
      * List all PaymentIntents.
      *
-     * @param array $params Optional parameters for listing PaymentIntents.
-     * @return \Stripe\Collection
+     * @param array<string, mixed> $params Optional parameters for listing PaymentIntents.
+     * @return \Stripe\Collection<\Stripe\PaymentIntent>
      * @throws \Exception if the listing fails
      */
     public function listPaymentIntent(array $params = []): \Stripe\Collection;
@@ -75,27 +57,17 @@ interface StripeGatewayInterface
      * Update a PaymentIntent.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to update.
-     * @param array $params The parameters to update the PaymentIntent with.
+     * @param array<string, mixed> $params The parameters to update the PaymentIntent with.
      * @return \Stripe\PaymentIntent
      * @throws \Exception if the update fails
      */
     public function updatePaymentIntent(string $paymentIntentId, array $params): \Stripe\PaymentIntent;
 
     /**
-     * Increment the authorization amount of a PaymentIntent.
-     *
-     * @param string $paymentIntentId The ID of the PaymentIntent to increment.
-     * @param int $amount The amount to increment in the smallest currency unit (e.g., cents for USD).
-     * @return \Stripe\PaymentIntent
-     * @throws \Exception if the increment fails
-     */
-    public function incrementAuthorization(string $paymentIntentId, int $amount): \Stripe\PaymentIntent;
-
-    /**
      * Search for PaymentIntents using a query.
      *
-     * @param array $params The search parameters, including the query string.
-     * @return \Stripe\SearchResult
+     * @param array<string, mixed> $params The search parameters, including the query string.
+     * @return \Stripe\SearchResult<\Stripe\PaymentIntent>
      * @throws \Exception if the search fails
      */
     public function searchPaymentIntent(array $params): \Stripe\SearchResult;

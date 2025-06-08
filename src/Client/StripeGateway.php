@@ -36,7 +36,7 @@ class StripeGateway extends StripeWrapper implements StripeGatewayInterface
     public function confirmPaymentIntent(string $paymentIntentId, array $options = []): \Stripe\PaymentIntent
     {
         return $this->handle(function () use ($paymentIntentId, $options) {
-            return $this->stripe->paymentIntents->confirm($paymentIntentId, $options);
+            return $this->stripe->paymentIntents->confirm($paymentIntentId, $options ?: null);
         });
     }
 
@@ -57,24 +57,25 @@ class StripeGateway extends StripeWrapper implements StripeGatewayInterface
     public function refundPaymentIntent(string $paymentIntentId, array $options = []): \Stripe\Refund
     {
         return $this->handle(function () use ($paymentIntentId, $options) {
-            return $this->stripe->refunds->create([
-                'payment_intent' => $paymentIntentId,
-                ...$options,
-            ]);
+            $params = ['payment_intent' => $paymentIntentId];
+            if (!empty($options)) {
+                $params = array_merge($params, $options);
+            }
+            return $this->stripe->refunds->create($params);
         });
     }
 
     public function listPaymentIntent(array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($params) {
-            return $this->stripe->paymentIntents->all($params);
+            return $this->stripe->paymentIntents->all($params ?: null);
         });
     }
 
     public function updatePaymentIntent(string $paymentIntentId, array $params): \Stripe\PaymentIntent
     {
         return $this->handle(function () use ($paymentIntentId, $params) {
-            return $this->stripe->paymentIntents->update($paymentIntentId, $params);
+            return $this->stripe->paymentIntents->update($paymentIntentId, $params ?: null);
         });
     }
 

@@ -15,7 +15,7 @@ class SetupIntentService extends StripeGateway implements SetupIntentServiceInte
 
     public function createSetupIntent(array $params): \Stripe\SetupIntent
     {
-        if (!$params['customer']) {
+        if (empty($params['customer'])) {
             throw new \InvalidArgumentException('Customer ID is required to create a SetupIntent.');
         }
 
@@ -35,7 +35,7 @@ class SetupIntentService extends StripeGateway implements SetupIntentServiceInte
     public function confirmSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId, $params) {
-            return $this->stripe->setupIntents->confirm($setupIntentId, $params);
+            return $this->stripe->setupIntents->confirm($setupIntentId, $params ?: null);
         });
     }
 
@@ -49,14 +49,14 @@ class SetupIntentService extends StripeGateway implements SetupIntentServiceInte
     public function listSetupIntents(array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($params) {
-            return $this->stripe->setupIntents->all($params);
+            return $this->stripe->setupIntents->all($params ?: null);
         });
     }
 
     public function updateSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId, $params) {
-            return $this->stripe->setupIntents->update($setupIntentId, $params);
+            return $this->stripe->setupIntents->update($setupIntentId, $params ?: null);
         });
     }
 

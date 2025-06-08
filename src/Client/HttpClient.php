@@ -17,7 +17,7 @@ class HttpClient implements ClientInterface
     /**
      * HttpClient constructor.
      *
-     * @param array $config Optional Guzzle configuration
+     * @param array<string, mixed> $config Optional Guzzle configuration
      */
     public function __construct(array $config = [])
     {
@@ -27,7 +27,7 @@ class HttpClient implements ClientInterface
     /**
      * Create a new HTTP client instance.
      *
-     * @param array $config Optional Guzzle configuration
+     * @param array<string, mixed> $config Optional Guzzle configuration
      * @return HttpClient
      */
     public static function create(array $config = []): HttpClient

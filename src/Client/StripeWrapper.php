@@ -7,6 +7,11 @@ use RuntimeException;
 
 abstract class StripeWrapper
 {
+    /**
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
     protected function handle(callable $callback)
     {
         try {
