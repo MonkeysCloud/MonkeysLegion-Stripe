@@ -19,7 +19,7 @@ interface SetupIntentServiceInterface
      * @param string $setupIntentId The ID of the Setup Intent to retrieve
      * @return \Stripe\SetupIntent
      */
-    public function retrieveSetupIntent(string $setupIntentId, array $options = []): \Stripe\SetupIntent;
+    public function retrieveSetupIntent(string $setupIntentId): \Stripe\SetupIntent;
 
     /**
      * Confirm a Setup Intent
@@ -36,7 +36,7 @@ interface SetupIntentServiceInterface
      * @param string $setupIntentId The ID of the Setup Intent to cancel
      * @return \Stripe\SetupIntent
      */
-    public function cancelSetupIntent(string $setupIntentId, array $options = []): \Stripe\SetupIntent;
+    public function cancelSetupIntent(string $setupIntentId): \Stripe\SetupIntent;
 
 
     /**

@@ -19,11 +19,10 @@ interface StripeGatewayInterface
      * Retrieve a PaymentIntent by its ID.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to retrieve.
-     * @param array $options Optional parameters for the request.
      * @return \Stripe\PaymentIntent
      * @throws \Exception if the retrieval fails
      */
-    public function retrievePaymentIntent(string $paymentIntentId, array $options = []): \Stripe\PaymentIntent;
+    public function retrievePaymentIntent(string $paymentIntentId): \Stripe\PaymentIntent;
 
     /**
      * Confirm a PaymentIntent.
@@ -39,21 +38,19 @@ interface StripeGatewayInterface
      * Cancel a PaymentIntent.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to cancel.
-     * @param array $options Optional parameters for the cancellation.
      * @return \Stripe\PaymentIntent
      * @throws \Exception if the cancellation fails
      */
-    public function cancelPaymentIntent(string $paymentIntentId, array $options = []): \Stripe\PaymentIntent;
+    public function cancelPaymentIntent(string $paymentIntentId): \Stripe\PaymentIntent;
 
     /**
      * Capture a PaymentIntent.
      *
      * @param string $paymentIntentId The ID of the PaymentIntent to capture.
-     * @param array $options Optional parameters for the capture.
      * @return \Stripe\PaymentIntent
      * @throws \Exception if the capture fails
      */
-    public function capturePaymentIntent(string $paymentIntentId, array $options = []): \Stripe\PaymentIntent;
+    public function capturePaymentIntent(string $paymentIntentId): \Stripe\PaymentIntent;
 
     /**
      * Refund a PaymentIntent.
@@ -102,4 +99,12 @@ interface StripeGatewayInterface
      * @throws \Exception if the search fails
      */
     public function searchPaymentIntent(array $params): \Stripe\SearchResult;
+
+    /**
+     * Check if a PaymentIntent is valid.
+     *
+     * @param string $paymentIntentId The ID of the PaymentIntent to check.
+     * @return bool
+     */
+    public function isValidPaymentIntent(string $paymentIntentId): bool;
 }
