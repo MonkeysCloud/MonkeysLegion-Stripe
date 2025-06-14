@@ -5,6 +5,25 @@
 
 First-class Stripe integration package for the MonkeysLegion PHP framework, providing PSR-compliant HTTP clients and service container integration.
 
+## 🚀 Quick Start
+
+```bash
+# Install the package
+composer require monkeyscloud/monkeyslegion-stripe
+
+# Publish the configuration file
+php vendor/monkeyscloud/monkeyslegion-stripe/publish.php
+
+# Set up your Stripe keys interactively
+php vendor/bin/key-helper set
+
+# Validate your configuration
+php vendor/bin/key-helper validate
+
+# Test webhook signature verification
+php vendor/bin/key-helper webhook:test
+```
+
 ## Features
 
 - **PSR-Compliant**: Built with PSR standards for maximum compatibility
@@ -12,6 +31,7 @@ First-class Stripe integration package for the MonkeysLegion PHP framework, prov
 - **Configuration Management**: Environment-based configuration with merging support
 - **HTTP Client Abstraction**: PSR-18 HTTP client implementation
 - **Key Management**: Built-in tools for managing Stripe API keys and webhook secrets
+- **Webhook Testing**: Comprehensive webhook signature validation testing
 
 ## Requirements
 
@@ -135,61 +155,218 @@ $stripeClient = $container->get('StripeClient');
 
 ## Key Management
 
-The package includes a comprehensive key management utility for generating and managing Stripe API keys and webhook secrets.
+The package includes a comprehensive key management utility for generating, validating, and managing Stripe API keys and webhook secrets. All operations are performed through the command line interface.
+
+### Command Reference
+
+```bash
+php vendor/bin/key-helper [COMMAND] [OPTIONS]
+
+Available Commands:
+  generate [KEY_TYPE]          # Generate and save a new key
+  set [KEY_NAME] [VALUE]       # Set a specific key or enter interactive mode
+  rotate [KEY_TYPE]            # Rotate (replace) an existing key
+  validate [KEY_TYPE]          # Validate keys (all if no type specified)
+  show [KEY_TYPE]              # Display current key value
+  list                         # List all Stripe/webhook keys
+  webhook:test                 # Test webhook secret validation
+
+Key Types:
+  secret                       # STRIPE_SECRET_KEY
+  publishable                  # STRIPE_PUBLISHABLE_KEY  
+  webhook                      # STRIPE_WEBHOOK_SECRET
+```
 
 ### Generate New Keys
 
+#### Generate Default App Key
 ```bash
-# Generate webhook secret
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php generate webhook
-
-# Generate secret key placeholder
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php generate secret
-
-# Generate publishable key placeholder
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php generate publishable
+# Generates STRIPE_APP_KEY (64-character hex string)
+php vendor/bin/key-helper generate
 ```
 
-### Rotate Existing Keys
-
+#### Generate Specific Key Types
 ```bash
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php rotate webhook
+# Generate webhook secret placeholder
+php vendor/bin/key-helper generate webhook
+
+# Generate secret key placeholder  
+php vendor/bin/key-helper generate secret
+
+# Generate publishable key placeholder
+php vendor/bin/key-helper generate publishable
+```
+
+### Set Keys
+
+#### Set Individual Keys
+```bash
+# Set a specific key value
+php vendor/bin/key-helper set STRIPE_SECRET_KEY sk_test_your_key_here
+
+# Set webhook secret
+php vendor/bin/key-helper set STRIPE_WEBHOOK_SECRET whsec_your_secret_here
+```
+
+#### Interactive Setup Mode
+```bash
+# Enter interactive mode to set all Stripe keys
+php vendor/bin/key-helper set
+
+# Interactive prompts for:
+# - STRIPE_PUBLISHABLE_KEY
+# - STRIPE_SECRET_KEY  
+# - STRIPE_WEBHOOK_SECRET
+# - STRIPE_API_VERSION
+# Press Enter to skip any key
 ```
 
 ### Validate Keys
 
+#### Validate All Keys
 ```bash
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php validate webhook
+# Validates all Stripe keys and shows comprehensive status
+php vendor/bin/key-helper validate
+
+# Example output:
+# ✅ STRIPE_SECRET_KEY (secret): VALID
+# ✅ STRIPE_PUBLISHABLE_KEY (publishable): VALID  
+# ⚠️  STRIPE_WEBHOOK_SECRET (webhook): NOT SET
+# ✅ STRIPE_API_VERSION: VALID
 ```
 
-### Show Current Keys
+## Webhook Handling
 
-```bash
-php vendor/monkeyscloud/monkeyslegion-stripe/bin/key-helper.php show webhook
+This package provides a robust webhook handling system that securely processes Stripe events while preventing duplicate processing.
+
+### Setting Up Webhooks
+
+1. **Configure Webhook Secret**
+   ```bash
+   # Set your webhook secret from Stripe Dashboard
+   php vendor/bin/key-helper set STRIPE_WEBHOOK_SECRET whsec_your_secret_here
+   
+   # Verify it's configured correctly
+   php vendor/bin/key-helper webhook:test
+   ```
+
+2. **Create a Webhook Endpoint**
+   ```php
+   <?php
+   // webhook.php
+   
+   require_once 'vendor/autoload.php';
+   
+   use MonkeysLegion\Stripe\Service\ServiceContainer;
+   
+   // Get the raw POST data
+   $payload = file_get_contents('php://input');
+   $sigHeader = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
+   
+   try {
+       $container = ServiceContainer::getInstance();
+       $webhookController = $container->get('webhook_controller');
+       
+       // Process the webhook
+       $result = $webhookController->handle($payload, $sigHeader, function($event) {
+           // Handle different event types
+           switch ($event['type']) {
+               case 'payment_intent.succeeded':
+                   // Handle successful payment
+                   $paymentIntent = $event['data']['object'];
+                   // Process order, send confirmation, etc.
+                   break;
+                   
+               case 'customer.subscription.created':
+                   // Handle new subscription
+                   $subscription = $event['data']['object'];
+                   // Update user subscription status
+                   break;
+                   
+               // Handle other event types...
+           }
+           
+           // Return success response
+           return ['status' => 'success', 'event' => $event['type']];
+       });
+       
+       // Output success
+       http_response_code(200);
+       echo json_encode($result);
+       
+   } catch (\Stripe\Exception\SignatureVerificationException $e) {
+       // Invalid signature
+       http_response_code(400);
+       echo json_encode(['error' => 'Invalid signature']);
+       
+   } catch (\Exception $e) {
+       // Other errors
+       http_response_code(500);
+       echo json_encode(['error' => $e->getMessage()]);
+   }
+   ```
+
+### WebhookController Features
+
+The `WebhookController` class provides a clean interface for handling Stripe webhooks:
+
+- **Secure Signature Verification**: Uses Stripe's cryptographic signature verification
+- **Idempotency Management**: Prevents duplicate processing of the same event
+- **Error Handling**: Comprehensive error handling for various Stripe exceptions
+- **Flexible Event Processing**: Pass your own callback to handle specific event types
+
+```php
+// Handle a webhook event with custom callback
+$webhookController->handle($payload, $sigHeader, function($eventData) {
+    // Your custom event handling logic
+    return ['status' => 'processed'];
+});
+
+// Check if an event has already been processed
+$isProcessed = $webhookController->isEventProcessed('evt_123456');
+
+// Clean up expired events
+$webhookController->cleanupExpiredEvents();
 ```
 
-## Architecture
+## Idempotency Management
 
-### Service Container
+Stripe webhooks might be sent multiple times for the same event (due to retries or network issues). The package includes an idempotency system that ensures each event is processed exactly once.
 
-The package uses a singleton ServiceContainer that manages service instances and factories:
+### MemoryIdempotencyStore
 
-- **Lazy Loading**: Services are instantiated only when first requested
-- **Singleton Pattern**: Ensures single instances of services
-- **Factory Support**: Services can be registered with factory callables
+The `MemoryIdempotencyStore` is a database-backed system that:
 
-### HTTP Client
+- **Tracks Processed Events**: Records which webhook events have been processed
+- **Prevents Duplicates**: Automatically rejects duplicate event IDs
+- **Time-Based Expiration**: Supports automatic cleanup of old events
+- **Data Storage**: Can store additional data associated with events
 
-The HttpClient implements PSR-18 ClientInterface:
+This component is managed automatically by the WebhookController and WebhookMiddleware, requiring no direct interaction in most use cases.
 
-- **Guzzle Integration**: Uses Guzzle HTTP client under the hood
-- **PSR-7 Compatibility**: Accepts and returns PSR-7 messages
-- **Exception Handling**: Converts Guzzle exceptions to PSR-18 exceptions
+### Database Setup
 
-### Configuration Merging
+The idempotency store requires a database table with the following structure:
 
-The configuration system supports merging vendor defaults with application overrides:
+```sql
+CREATE TABLE idempotency_store (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    event_id VARCHAR(255) NOT NULL UNIQUE,
+    processed_at DATETIME NOT NULL,
+    expiry DATETIME NULL,
+    data JSON NULL,
+    UNIQUE INDEX idx_event_id (event_id)
+);
+```
 
-- **Vendor Defaults**: Package provides sensible defaults
-- **Application Overrides**: Your project can override any configuration
-- **Deep Merging**: Nested arrays are merged recursively
+### Configuring Expiration
+
+By default, processed events are stored for 48 hours. You can customize this:
+
+```php
+// In your app configuration
+return [
+    'webhook_default_ttl' => 86400, // 24 hours (in seconds)
+    // ...other config
+];
+```
