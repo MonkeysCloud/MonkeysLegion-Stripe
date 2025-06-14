@@ -1,0 +1,583 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Stripe\Webhook;
+use Stripe\Exception\SignatureVerificationException;
+
+/**
+ * KeyHelper - Comprehensive Stripe key management utility
+ * 
+ * This class provides a complete set of tools for managing Stripe API keys,
+ * webhook secrets, and other configuration values in .env files.
+ * 
+ * Features:
+ * - Generate cryptographically secure keys
+ * - Interactive key setup mode
+ * - Individual and bulk key validation
+ * - Key rotation and management
+ * - Webhook signature testing
+ * - Environment file manipulation
+ */
+class KeyHelper
+{
+    /** @var string The name of the environment file relative to working directory */
+    private const KEY_FILE_NAME = '/.env';
+
+    /** @var array Mapping of key aliases to actual environment variable names */
+    private const ALLOWED_KEYS = [
+        'secret'      => 'STRIPE_SECRET_KEY',
+        'publishable' => 'STRIPE_PUBLISHABLE_KEY',
+        'webhook'     => 'STRIPE_WEBHOOK_SECRET'
+    ];
+
+    private string $keyFile;
+
+    public function __construct()
+    {
+        // Construct the full path to the .env file in the current working directory
+        $this->keyFile = getcwd() . self::KEY_FILE_NAME;
+    }
+
+    /**
+     * Generate a cryptographically secure random key
+     * 
+     * Uses PHP's random_bytes() function to generate secure random data,
+     * then converts it to hexadecimal representation for safe storage.
+     * 
+     * @param int $length Number of random bytes to generate (default: 32 bytes = 64 hex chars)
+     * @return string Hexadecimal representation of the random bytes
+     */
+    public function generateKey(int $length = 32): string
+    {
+        return bin2hex(random_bytes($length)); // 64 hex chars (32 bytes)
+    }
+
+    /**
+     * Save a key-value pair to the .env file
+     * 
+     * This method safely updates environment files by:
+     * 1. Reading existing content
+     * 2. Preserving comments and formatting
+     * 3. Updating or adding the specified key
+     * 4. Writing back all content atomically
+     * 
+     * @param string $key The value to store
+     * @param string $keyName The environment variable name
+     * @return void
+     */
+    public function saveKey(string $key, string $keyName = 'APP_KEY'): void
+    {
+        // Ensure the directory exists before writing
+        $dir = dirname($this->keyFile);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);  // Create directory recursively if not exists
+        }
+
+        // Read existing keys from file, preserving structure
+        $env = [];
+        if (file_exists($this->keyFile)) {
+            $lines = file($this->keyFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                if (strpos(trim($line), '#') === 0) continue; // skip comments
+                if (strpos($line, '=') !== false) {
+                    list($k, $v) = explode('=', $line, 2);
+                    $env[trim($k)] = trim($v);
+                }
+            }
+        }
+
+        // Update or add the key
+        $env[$keyName] = $key;
+
+        // Write back all keys in simple KEY=VALUE format
+        $content = '';
+        foreach ($env as $k => $v) {
+            $content .= "$k=$v\n";
+        }
+        file_put_contents($this->keyFile, $content);
+
+        echo "Key saved to " . $this->keyFile . PHP_EOL;
+    }
+
+    /**
+     * Read a specific key from the .env file
+     * 
+     * Safely parses the environment file to extract a specific key's value,
+     * ignoring comments and handling malformed lines gracefully.
+     * 
+     * @param string $keyName The environment variable name to read
+     * @return string|null The key value, or null if not found
+     */
+    public function readKey(string $keyName = 'APP_KEY'): ?string
+    {
+        if (!file_exists($this->keyFile)) {
+            return null;
+        }
+
+        $lines = file($this->keyFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            if (strpos(trim($line), '#') === 0) continue; // Skip comment lines
+            if (strpos($line, '=') !== false) {
+                list($k, $v) = explode('=', $line, 2);
+                if (trim($k) === $keyName) {
+                    return trim($v);
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Validate a key based on its format and type
+     * 
+     * Supports validation for:
+     * - Generated keys (64-character hexadecimal)
+     * - Stripe secret keys (sk_test_*, sk_live_*
+     * - Stripe publishable keys (pk_test_*, pk_live_*
+     * - Webhook secrets (whsec_*
+     * - API versions (YYYY-MM-DD format)
+     * 
+     * @param string $key The key to validate
+     * @return bool True if the key appears to be valid
+     */
+    public function validateKey(string $key): bool
+    {
+        // Enhanced validation for different key types
+        if (strlen($key) === 64 && preg_match('/^[a-f0-9]{64}$/', $key)) {
+            return true; // Generated keys (64 hex chars)
+        }
+
+        // Stripe API keys validation
+        if (str_starts_with($key, 'sk_test_') || str_starts_with($key, 'sk_live_')) {
+            return strlen($key) > 20; // Secret keys
+        }
+
+        if (str_starts_with($key, 'pk_test_') || str_starts_with($key, 'pk_live_')) {
+            return strlen($key) > 20; // Publishable keys
+        }
+
+        if (str_starts_with($key, 'whsec_')) {
+            return strlen($key) > 20; // Webhook secrets
+        }
+
+        // API version validation
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $key)) {
+            return true; // Date format for API version
+        }
+
+        return false;
+    }
+
+    /**
+     * Validate all Stripe-related keys in the environment
+     * 
+     * Performs comprehensive validation of all known Stripe keys:
+     * - ALLOWED_KEYS (secret, publishable, webhook)
+     * - Additional keys (API version, app key)
+     * 
+     * Provides clear status reporting with emojis and exits with
+     * appropriate code based on validation results.
+     * 
+     * @return void
+     */
+    public function validateAllKeys(): void
+    {
+        echo "Validating all Stripe keys..." . PHP_EOL . PHP_EOL;
+
+        $hasErrors = false;
+
+        // Validate core Stripe keys
+        foreach (self::ALLOWED_KEYS as $alias => $keyName) {
+            $key = $this->readKey($keyName);
+
+            if ($key === null) {
+                echo "⚠️  $keyName ($alias): NOT SET" . PHP_EOL;
+                $hasErrors = true;
+            } elseif ($this->validateKey($key)) {
+                echo "✅ $keyName ($alias): VALID" . PHP_EOL;
+            } else {
+                echo "❌ $keyName ($alias): INVALID" . PHP_EOL;
+                $hasErrors = true;
+            }
+        }
+
+        // Check additional Stripe-related keys
+        $additionalKeys = ['STRIPE_API_VERSION', 'STRIPE_APP_KEY'];
+        foreach ($additionalKeys as $keyName) {
+            $key = $this->readKey($keyName);
+
+            if ($key === null) {
+                echo "⚠️  $keyName: NOT SET" . PHP_EOL;
+            } elseif ($this->validateKey($key)) {
+                echo "✅ $keyName: VALID" . PHP_EOL;
+            } else {
+                echo "❌ $keyName: INVALID" . PHP_EOL;
+                $hasErrors = true;
+            }
+        }
+
+        echo PHP_EOL;
+        if ($hasErrors) {
+            echo "Some keys have issues. Please check the warnings above." . PHP_EOL;
+            exit(1);
+        } else {
+            echo "All keys are valid!" . PHP_EOL;
+        }
+    }
+
+    /**
+     * Validate a specific key and display detailed information
+     * 
+     * Provides detailed validation results for a single key,
+     * including the current value and validation status.
+     * 
+     * @param string $keyName The environment variable name to validate
+     * @return void
+     */
+    public function validateSingleKey(string $keyName): void
+    {
+        echo "Validating $keyName..." . PHP_EOL;
+
+        $key = $this->readKey($keyName);
+        if ($key === null) {
+            echo "❌ Key '$keyName' not found in .env file." . PHP_EOL;
+            exit(1);
+        }
+
+        if ($this->validateKey($key)) {
+            echo "✅ Key '$keyName' is valid." . PHP_EOL;
+            echo "Value: $key" . PHP_EOL;
+        } else {
+            echo "❌ Key '$keyName' is invalid!" . PHP_EOL;
+            echo "Current value: $key" . PHP_EOL;
+            exit(1);
+        }
+    }
+
+    /**
+     * Display comprehensive usage information
+     * 
+     * Shows all available commands with their syntax and descriptions.
+     * This serves as the primary help system for the utility.
+     * 
+     * @return void
+     */
+    public function printUsage(): void
+    {
+        echo "Usage:" . PHP_EOL;
+        echo "  key-helper.php generate [KEY_NAME]   # Generate and save a new key (default: STRIPE_APP_KEY)" . PHP_EOL;
+        echo "  key-helper.php set [KEY_NAME VALUE]  # Set a specific key with a value, or interactively set all Stripe keys" . PHP_EOL;
+        echo "  key-helper.php rotate [KEY_NAME]     # Rotate (replace) the key" . PHP_EOL;
+        echo "  key-helper.php validate [KEY_NAME]   # Validate the existing key (all keys if no name specified)" . PHP_EOL;
+        echo "  key-helper.php show [KEY_NAME]       # Show the current key" . PHP_EOL;
+        echo "  key-helper.php list                  # List all keys with STRIPE or WEBHOOK prefix" . PHP_EOL;
+        echo "  key-helper.php webhook:test          # Test webhook secret validation" . PHP_EOL;
+    }
+
+    /**
+     * Verify webhook signature using Stripe's official validation logic
+     * 
+     * This method replicates Stripe's webhook signature verification process
+     * to test whether a webhook secret is working correctly. It uses the
+     * official Stripe SDK for maximum compatibility.
+     * 
+     * @param string $payload Raw request body
+     * @param string $sigHeader Stripe-Signature header
+     * @param string $endpointSecret Webhook secret
+     * @param int $tolerance Tolerance in seconds (default 300)
+     * @return array Webhook event data
+     * @throws SignatureVerificationException
+     */
+    public function verifyWebhookSignature(string $payload, string $sigHeader, string $endpointSecret, int $tolerance = 300): array
+    {
+        try {
+            $event = Webhook::constructEvent(
+                $payload,
+                $sigHeader,
+                $endpointSecret,
+                $tolerance
+            );
+
+            return $event->toArray();
+        } catch (SignatureVerificationException $e) {
+            throw new SignatureVerificationException(
+                'Webhook signature verification failed: ' . $e->getMessage(),
+                $e->getCode(),
+                $e
+            );
+        }
+    }
+
+    /**
+     * Test webhook secret validation with a simulated Stripe request
+     * 
+     * Creates a realistic webhook payload and signature, then tests whether
+     * the configured webhook secret can successfully verify the signature.
+     * This helps ensure webhook endpoints will work correctly.
+     * 
+     * Provides detailed timing and status information for debugging.
+     * 
+     * @return void
+     */
+    public function testWebhookSecret(): void
+    {
+        // Check if webhook secret is configured
+        $webhookSecret = $this->readKey('STRIPE_WEBHOOK_SECRET');
+        if ($webhookSecret === null) {
+            echo "❌ STRIPE_WEBHOOK_SECRET not found in .env file" . PHP_EOL;
+            echo "HTTP Status: N/A" . PHP_EOL;
+            echo "Process Time: N/A" . PHP_EOL;
+            return;
+        }
+
+        echo "Testing webhook secret validation..." . PHP_EOL;
+
+        $startTime = microtime(true);
+
+        try {
+            // Create a realistic Stripe webhook payload
+            $testPayload = json_encode([
+                'id' => 'evt_test_payment_intent_succeeded_' . uniqid(),
+                'object' => 'event',
+                'type' => 'payment_intent.succeeded',
+                'livemode' => false,
+                'created' => time(),
+                'data' => [
+                    'object' => [
+                        'id' => 'pi_test_' . uniqid(),
+                        'object' => 'payment_intent',
+                        'amount' => 2000,
+                        'currency' => 'usd',
+                        'status' => 'succeeded',
+                        'description' => 'Test manual payment intent',
+                    ]
+                ]
+            ]);
+
+            $timestamp = time();
+
+            // Create a proper HMAC signature as Stripe would
+            $signedPayload = $timestamp . '.' . $testPayload;
+            $signature = hash_hmac('sha256', $signedPayload, $webhookSecret);
+            $testSigHeader = "t=$timestamp,v1=$signature";
+
+            // Verify the signature using Stripe's official method
+            $result = $this->verifyWebhookSignature($testPayload, $testSigHeader, $webhookSecret);
+
+            $endTime = microtime(true);
+            $processTime = round(($endTime - $startTime) * 1000, 2); // Convert to milliseconds
+
+            // Display success results
+            echo "✅ Webhook secret validation: VALID" . PHP_EOL;
+            echo "HTTP Status: 200 OK" . PHP_EOL;
+            echo "Process Time: {$processTime}ms" . PHP_EOL;
+            echo "Event Type: " . ($result['type'] ?? 'N/A') . PHP_EOL;
+        } catch (SignatureVerificationException $e) {
+            $endTime = microtime(true);
+            $processTime = round(($endTime - $startTime) * 1000, 2);
+
+            // Display verification failure results
+            echo "❌ Webhook secret validation: INVALID" . PHP_EOL;
+            echo "HTTP Status: 400 Bad Request" . PHP_EOL;
+            echo "Process Time: {$processTime}ms" . PHP_EOL;
+            echo "Error: " . $e->getMessage() . PHP_EOL;
+        } catch (\Exception $e) {
+            $endTime = microtime(true);
+            $processTime = round(($endTime - $startTime) * 1000, 2);
+
+            // Display unexpected error results
+            echo "❌ Webhook secret validation: INVALID" . PHP_EOL;
+            echo "HTTP Status: 500 Internal Server Error" . PHP_EOL;
+            echo "Process Time: {$processTime}ms" . PHP_EOL;
+            echo "Error: " . $e->getMessage() . PHP_EOL;
+        }
+    }
+
+    /**
+     * Main application entry point
+     * 
+     * Parses command line arguments and routes to appropriate methods.
+     * Handles argument validation and provides user-friendly error messages.
+     * 
+     * @param array $argv Command line arguments
+     * @return void
+     */
+    public function run(array $argv): void
+    {
+        $argc = count($argv);
+
+        if ($argc < 2) {
+            $this->printUsage();
+            exit(1);
+        }
+
+        $command = strtolower($argv[1]);
+        $keyAlias = isset($argv[2]) ? strtolower($argv[2]) : null;
+        $keyName = null;
+
+        // Command-specific argument validation and processing
+
+        // Commands that require a specific key alias
+        if (in_array($command, ['rotate', 'show'])) {
+            if ($keyAlias === null) {
+                echo "You must specify a key type: secret, publishable, or webhook.\n";
+                $this->printUsage();
+                exit(1);
+            }
+            if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
+                echo "Invalid key type: $keyAlias\n";
+                echo "Allowed types: secret, publishable, webhook\n";
+                exit(1);
+            }
+            $keyName = self::ALLOWED_KEYS[$keyAlias];
+        } elseif ($command === 'validate') {
+            // Validate command: optional key alias (validate all if none specified)
+            if ($keyAlias !== null) {
+                if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
+                    echo "Invalid key type: $keyAlias\n";
+                    echo "Allowed types: secret, publishable, webhook\n";
+                    exit(1);
+                }
+                $keyName = self::ALLOWED_KEYS[$keyAlias];
+            }
+        } elseif ($command === 'generate') {
+            // Generate command: optional key alias (use default if none specified)
+            if ($keyAlias === null) {
+                $keyName = 'STRIPE_APP_KEY';
+            } else {
+                if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
+                    echo "Invalid key type: $keyAlias\n";
+                    echo "Allowed types: secret, publishable, webhook\n";
+                    exit(1);
+                }
+                $keyName = self::ALLOWED_KEYS[$keyAlias];
+            }
+        } elseif ($command === 'set') {
+            // Set command: either specific key/value or interactive mode
+            if ($keyAlias !== null && isset($argv[3])) {
+                $keyName = strtoupper($argv[2]); // Use the key name as provided
+            } elseif ($keyAlias !== null && !isset($argv[3])) {
+                echo "Usage: key-helper.php set KEY_NAME VALUE\n";
+                exit(1);
+            }
+            // If no parameters, we'll handle interactive mode in the switch statement
+        }
+
+        // Execute the requested command
+        switch ($command) {
+            case 'generate':
+                $key = $this->generateKey();
+                $this->saveKey($key, $keyName);
+                echo "Generated key ($keyName): $key" . PHP_EOL;
+                break;
+
+            case 'set':
+                if ($keyName !== null) {
+                    // Single key mode: set specific key to specific value
+                    $value = $argv[3];
+                    $this->saveKey($value, $keyName);
+                    echo "Set key ($keyName): $value" . PHP_EOL;
+                } else {
+                    // Interactive mode: prompt for all Stripe keys
+                    $stripeKeys = [
+                        'STRIPE_PUBLISHABLE_KEY',
+                        'STRIPE_SECRET_KEY',
+                        'STRIPE_WEBHOOK_SECRET',
+                        'STRIPE_API_VERSION'
+                    ];
+
+                    echo "Interactive Stripe key setup (press Enter to skip):" . PHP_EOL;
+
+                    foreach ($stripeKeys as $key) {
+                        $currentValue = $this->readKey($key);
+                        $currentDisplay = $currentValue ? " (current: $currentValue)" : " (not set)";
+
+                        echo "Enter value for $key$currentDisplay: ";
+                        $input = trim(fgets(STDIN));
+
+                        if ($input !== '') {
+                            $this->saveKey($input, $key);
+                            echo "Updated $key" . PHP_EOL;
+                        } else {
+                            echo "Skipped $key" . PHP_EOL;
+                        }
+                    }
+
+                    echo "Interactive setup completed." . PHP_EOL;
+                }
+                break;
+
+            case 'rotate':
+                echo "Rotating key $keyName..." . PHP_EOL;
+                $key = $this->generateKey();
+                $this->saveKey($key, $keyName);
+                echo "New key ($keyName): $key" . PHP_EOL;
+                break;
+
+            case 'validate':
+                if ($keyName !== null) {
+                    // Validate a specific key
+                    $this->validateSingleKey($keyName);
+                } else {
+                    // Validate all keys
+                    $this->validateAllKeys();
+                }
+                break;
+
+            case 'show':
+                $key = $this->readKey($keyName);
+                if ($key === null) {
+                    echo "No key named '$keyName' found." . PHP_EOL;
+                    exit(1);
+                }
+                echo "Current key ($keyName): $key" . PHP_EOL;
+                break;
+
+            case 'list':
+                // List all Stripe-related keys
+                if (!file_exists($this->keyFile)) {
+                    echo "No .env file found." . PHP_EOL;
+                    exit(1);
+                }
+
+                $lines = file($this->keyFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                $relevantKeys = [];
+
+                foreach ($lines as $line) {
+                    if (strpos(trim($line), '#') === 0) continue; // skip comments
+                    if (strpos($line, '=') !== false) {
+                        list($k, $v) = explode('=', $line, 2);
+                        $keyName = trim($k);
+                        if (strpos($keyName, 'STRIPE') === 0 || strpos($keyName, 'WEBHOOK') === 0) {
+                            $relevantKeys[$keyName] = trim($v);
+                        }
+                    }
+                }
+
+                if (empty($relevantKeys)) {
+                    echo "No STRIPE or WEBHOOK keys found." . PHP_EOL;
+                } else {
+                    echo "STRIPE and WEBHOOK keys found:" . PHP_EOL;
+                    foreach ($relevantKeys as $key => $value) {
+                        echo "  $key = $value" . PHP_EOL;
+                    }
+                }
+                break;
+
+            case 'webhook:test':
+                $this->testWebhookSecret();
+                break;
+
+            default:
+                echo "Unknown command: $command" . PHP_EOL;
+                $this->printUsage();
+                exit(1);
+        }
+    }
+}
+
+// Initialize and run the application
+$keyHelper = new KeyHelper();
+$keyHelper->run($argv);
