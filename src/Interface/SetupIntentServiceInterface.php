@@ -8,7 +8,8 @@ interface SetupIntentServiceInterface
     /**
      * Create a new Setup Intent
      *
-     * @param array<string, mixed> $params Parameters for the Setup Intent
+     * @param array<string, mixed> $params Parameters for the Setup Intent. 
+     *                                     If 'payment_method_types' is not provided, defaults to ['card']
      * @return \Stripe\SetupIntent
      */
     public function createSetupIntent(array $params): \Stripe\SetupIntent;

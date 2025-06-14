@@ -1,0 +1,77 @@
+<?php
+
+namespace MonkeysLegion\Stripe\Client;
+
+use MonkeysLegion\Stripe\Interface\CheckoutSessionInterface;
+use Stripe\StripeClient;
+
+class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
+{
+    private StripeClient $stripe;
+
+    public function __construct(StripeClient $stripeClient)
+    {
+        $this->stripe = $stripeClient;
+    }
+
+    public function createCheckoutSession(array $params): \Stripe\Checkout\Session
+    {
+        if (empty($params['line_items']) && empty($params['mode'])) {
+            throw new \InvalidArgumentException('line_items and mode are required to create a Checkout Session.');
+        }
+
+        return $this->handle(function () use ($params) {
+            return $this->stripe->checkout->sessions->create($params);
+        });
+    }
+
+    public function retrieveCheckoutSession(string $sessionId): \Stripe\Checkout\Session
+    {
+        return $this->handle(function () use ($sessionId) {
+            return $this->stripe->checkout->sessions->retrieve($sessionId);
+        });
+    }
+
+    public function listCheckoutSessions(array $params = []): \Stripe\Collection
+    {
+        return $this->handle(function () use ($params) {
+            return $this->stripe->checkout->sessions->all($params ?: null);
+        });
+    }
+
+    public function expireCheckoutSession(string $sessionId): \Stripe\Checkout\Session
+    {
+        return $this->handle(function () use ($sessionId) {
+            return $this->stripe->checkout->sessions->expire($sessionId);
+        });
+    }
+
+    public function listLineItems(string $sessionId, array $params = []): \Stripe\Collection
+    {
+        return $this->handle(function () use ($sessionId, $params) {
+            return $this->stripe->checkout->sessions->allLineItems($sessionId, $params ?: null);
+        });
+    }
+
+    public function getCheckoutUrl(array $params): string
+    {
+        $session = $this->createCheckoutSession($params);
+        return $session->url;
+    }
+
+    public function isValidCheckoutSession(string $sessionId): bool
+    {
+        return $this->handle(function () use ($sessionId) {
+            $session = $this->stripe->checkout->sessions->retrieve($sessionId);
+            return in_array($session->status, ['complete', 'open']);
+        });
+    }
+
+    public function isExpiredCheckoutSession(string $sessionId): bool
+    {
+        return $this->handle(function () use ($sessionId) {
+            $session = $this->stripe->checkout->sessions->retrieve($sessionId);
+            return $session->status === 'expired';
+        });
+    }
+}

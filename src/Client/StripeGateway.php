@@ -3,12 +3,11 @@
 namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\StripeGatewayInterface;
-use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
 class StripeGateway extends StripeWrapper implements StripeGatewayInterface
 {
-    protected StripeClient $stripe;
+    private StripeClient $stripe;
 
     public function __construct(StripeClient $stripeClient)
     {

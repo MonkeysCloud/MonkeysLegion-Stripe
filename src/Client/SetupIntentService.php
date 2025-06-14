@@ -3,11 +3,12 @@
 namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\SetupIntentServiceInterface;
-use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
-class SetupIntentService extends StripeGateway implements SetupIntentServiceInterface
+class SetupIntentService extends StripeWrapper implements SetupIntentServiceInterface
 {
+
+    private StripeClient $stripe;
     public function __construct(StripeClient $stripeClient)
     {
         $this->stripe = $stripeClient;
@@ -15,8 +16,8 @@ class SetupIntentService extends StripeGateway implements SetupIntentServiceInte
 
     public function createSetupIntent(array $params): \Stripe\SetupIntent
     {
-        if (empty($params['customer'])) {
-            throw new \InvalidArgumentException('Customer ID is required to create a SetupIntent.');
+        if (!isset($params['payment_method_types'])) {
+            $params['payment_method_types'] = ['card'];
         }
 
         return $this->handle(function () use ($params) {
