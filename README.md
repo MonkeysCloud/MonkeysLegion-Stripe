@@ -5,6 +5,10 @@
 
 First-class Stripe integration package for the MonkeysLegion PHP framework, providing PSR-compliant HTTP clients and service container integration.
 
+## Documentation
+All usage, configuration, and API references can be found in the [official Monkeys Legion Stripe package documentation](https://monkeyslegion.com/docs/packages/stripe).
+
+
 ## 🚀 Quick Start
 
 ```bash
