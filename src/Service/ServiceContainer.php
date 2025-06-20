@@ -3,6 +3,7 @@
 namespace MonkeysLegion\Stripe\Service;
 
 use Exception;
+use Dotenv\Dotenv;
 
 class ServiceContainer
 {
@@ -10,8 +11,13 @@ class ServiceContainer
 
     private array $instances = [];
     private array $factories = [];
+    private array $config = [];
 
-    private function __construct() {}
+    private function __construct()
+    {
+        $dotenv = Dotenv::createImmutable(getcwd() . '/..');
+        $dotenv->load();
+    }
 
     /**
      * Get the singleton instance of the ServiceContainer.
@@ -56,5 +62,27 @@ class ServiceContainer
         }
 
         throw new Exception("Service '{$name}' not found.");
+    }
+
+    /**
+     *  Set configuration for a service.
+     *  @param array $config The configuration array.
+     *  @param string $name The name of the service.
+     * @return void
+     */
+    public function setConfig(array $config, string $name): void
+    {
+        $this->config[$name] = $config;
+    }
+
+    /**
+     * Get configuration for a service.
+     *
+     * @param string $name The name of the service.
+     * @return array The configuration array.
+     */
+    public function getConfig(string $name): array
+    {
+        return $this->config[$name] ?? [];
     }
 }

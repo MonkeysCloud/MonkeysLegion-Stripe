@@ -19,7 +19,7 @@ interface IdempotencyStoreInterface
      * @param int|null $ttl Time to live in seconds (optional)
      * @return void
      */
-    public function markAsProcessed(string $eventId, ?int $ttl = null): void;
+    public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void;
 
     /**
      * Remove a specific event from processed list
@@ -42,4 +42,11 @@ interface IdempotencyStoreInterface
      * @return void
      */
     public function cleanupExpired(): void;
+
+    /**
+     * Get all processed events (for demo/debugging purposes)
+     *
+     * @return array
+     */
+    public function getAllEvents(): array;
 }
