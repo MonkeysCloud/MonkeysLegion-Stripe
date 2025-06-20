@@ -1,19 +1,29 @@
 <?php
+require __DIR__ . '/vendor/autoload.php';
 
-$source = __DIR__ . '/config/stripe.php';
+use Dotenv\Dotenv;
 
 $projectRoot = getcwd();
-$destination = $projectRoot . '/config/stripe.php';
+$dotenv = Dotenv::createImmutable($projectRoot);
+$dotenv->load();
+
+$appEnv = $_ENV['APP_ENV'] ?? 'dev';
+
+$source = __DIR__ . '/config/stripe.php';
 
 if (!file_exists($source)) {
     echo "❌ Source config file does not exist: $source\n";
     exit(1);
 }
 
+$destination = $projectRoot . '/config/stripe/stripe.' . ($appEnv) . '.php';
+
+// Ensure the destination directory exists
 if (!is_dir(dirname($destination))) {
     mkdir(dirname($destination), 0755, true);
 }
 
+// Remove the existing destination file if it exists
 if (file_exists($destination)) {
     echo "⚠️  Config file already exists at: $destination\n";
     echo "Do you want to overwrite it? (y/N): ";
@@ -22,10 +32,8 @@ if (file_exists($destination)) {
         echo "⏭️  Skipped.\n";
         exit(0);
     }
+    unlink($destination); // Remove the existing file
 }
 
-if (copy($source, $destination)) {
-    echo "✅ Published config file to: $destination\n";
-} else {
-    echo "❌ Failed to publish config.\n";
-}
+$output = shell_exec('cp ' . $source . ' ' . $destination);
+echo "✅ Config file copied to: $destination\n";

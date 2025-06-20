@@ -33,11 +33,26 @@ class KeyHelper
     ];
 
     private string $keyFile;
+    private string $stage = 'dev'; // Default stage
 
-    public function __construct()
+    public function __construct(array $argv)
     {
-        // Construct the full path to the .env file in the current working directory
-        $this->keyFile = getcwd() . self::KEY_FILE_NAME;
+        $working_dir = getcwd();
+        if (!$working_dir) throw new RuntimeException("Could not determine the current working directory.");
+
+        // Parse --stage flag
+        foreach ($argv as $arg) {
+            if (str_starts_with($arg, '--stage=')) {
+                $this->stage = substr($arg, 8);
+                if (!in_array($this->stage, ['dev', 'prod', 'test'])) {
+                    throw new InvalidArgumentException("Invalid stage: {$this->stage}. Allowed values are: dev, prod, test.");
+                }
+                break;
+            }
+        }
+
+        // Construct the full path to the .env.<stage> file
+        $this->keyFile = $working_dir . '/.env.' . $this->stage;
     }
 
     /**
@@ -267,13 +282,17 @@ class KeyHelper
     public function printUsage(): void
     {
         echo "Usage:" . PHP_EOL;
-        echo "  key-helper.php generate [KEY_NAME]   # Generate and save a new key (default: STRIPE_APP_KEY)" . PHP_EOL;
-        echo "  key-helper.php set [KEY_NAME VALUE]  # Set a specific key with a value, or interactively set all Stripe keys" . PHP_EOL;
-        echo "  key-helper.php rotate [KEY_NAME]     # Rotate (replace) the key" . PHP_EOL;
-        echo "  key-helper.php validate [KEY_NAME]   # Validate the existing key (all keys if no name specified)" . PHP_EOL;
-        echo "  key-helper.php show [KEY_NAME]       # Show the current key" . PHP_EOL;
-        echo "  key-helper.php list                  # List all keys with STRIPE or WEBHOOK prefix" . PHP_EOL;
-        echo "  key-helper.php webhook:test          # Test webhook secret validation" . PHP_EOL;
+        echo "  key-helper.php [--stage=dev|prod|test] command [arguments]" . PHP_EOL;
+        echo "  --stage flag allows specifying the environment (default: dev)" . PHP_EOL;
+        echo PHP_EOL;
+        echo "Commands:" . PHP_EOL;
+        echo "  generate [KEY_NAME]   # Generate and save a new key (default: STRIPE_APP_KEY)" . PHP_EOL;
+        echo "  set [KEY_NAME VALUE]  # Set a specific key with a value, or interactively set all Stripe keys" . PHP_EOL;
+        echo "  rotate [KEY_NAME]     # Rotate (replace) the key" . PHP_EOL;
+        echo "  validate [KEY_NAME]   # Validate the existing key (all keys if no name specified)" . PHP_EOL;
+        echo "  show [KEY_NAME]       # Show the current key" . PHP_EOL;
+        echo "  list                  # List all keys with STRIPE or WEBHOOK prefix" . PHP_EOL;
+        echo "  webhook:test          # Test webhook secret validation" . PHP_EOL;
     }
 
     /**
@@ -326,7 +345,7 @@ class KeyHelper
         // Check if webhook secret is configured
         $webhookSecret = $this->readKey('STRIPE_WEBHOOK_SECRET');
         if ($webhookSecret === null) {
-            echo "❌ STRIPE_WEBHOOK_SECRET not found in .env file" . PHP_EOL;
+            echo "❌ STRIPE_WEBHOOK_SECRET not found in .env." . $this->stage . " file" . PHP_EOL;
             echo "HTTP Status: N/A" . PHP_EOL;
             echo "Process Time: N/A" . PHP_EOL;
             return;
@@ -406,6 +425,9 @@ class KeyHelper
      */
     public function run(array $argv): void
     {
+        // Remove --stage flag from arguments
+        $argv = array_values(array_filter($argv, fn($arg) => !str_starts_with($arg, '--stage=')));
+
         $argc = count($argv);
 
         if ($argc < 2) {
@@ -414,12 +436,10 @@ class KeyHelper
         }
 
         $command = strtolower($argv[1]);
-        $keyAlias = isset($argv[2]) ? strtolower($argv[2]) : null;
+        $keyAlias = $argv[2] ?? null;
         $keyName = null;
 
         // Command-specific argument validation and processing
-
-        // Commands that require a specific key alias
         if (in_array($command, ['rotate', 'show'])) {
             if ($keyAlias === null) {
                 echo "You must specify a key type: secret, publishable, or webhook.\n";
@@ -433,36 +453,26 @@ class KeyHelper
             }
             $keyName = self::ALLOWED_KEYS[$keyAlias];
         } elseif ($command === 'validate') {
-            // Validate command: optional key alias (validate all if none specified)
-            if ($keyAlias !== null) {
-                if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
-                    echo "Invalid key type: $keyAlias\n";
-                    echo "Allowed types: secret, publishable, webhook\n";
-                    exit(1);
-                }
-                $keyName = self::ALLOWED_KEYS[$keyAlias];
+            if ($keyAlias !== null && !array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
+                echo "Invalid key type: $keyAlias\n";
+                echo "Allowed types: secret, publishable, webhook\n";
+                exit(1);
             }
+            $keyName = $keyAlias ? self::ALLOWED_KEYS[$keyAlias] : null;
         } elseif ($command === 'generate') {
-            // Generate command: optional key alias (use default if none specified)
-            if ($keyAlias === null) {
-                $keyName = 'STRIPE_APP_KEY';
-            } else {
-                if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
-                    echo "Invalid key type: $keyAlias\n";
-                    echo "Allowed types: secret, publishable, webhook\n";
-                    exit(1);
-                }
-                $keyName = self::ALLOWED_KEYS[$keyAlias];
+            $keyName = $keyAlias ? (self::ALLOWED_KEYS[$keyAlias] ?? null) : 'STRIPE_APP_KEY';
+            if ($keyAlias && !$keyName) {
+                echo "Invalid key type: $keyAlias\n";
+                echo "Allowed types: secret, publishable, webhook\n";
+                exit(1);
             }
         } elseif ($command === 'set') {
-            // Set command: either specific key/value or interactive mode
             if ($keyAlias !== null && isset($argv[3])) {
-                $keyName = strtoupper($argv[2]); // Use the key name as provided
+                $keyName = strtoupper($keyAlias);
             } elseif ($keyAlias !== null && !isset($argv[3])) {
                 echo "Usage: key-helper.php set KEY_NAME VALUE\n";
                 exit(1);
             }
-            // If no parameters, we'll handle interactive mode in the switch statement
         }
 
         // Execute the requested command
@@ -475,12 +485,10 @@ class KeyHelper
 
             case 'set':
                 if ($keyName !== null) {
-                    // Single key mode: set specific key to specific value
                     $value = $argv[3];
                     $this->saveKey($value, $keyName);
                     echo "Set key ($keyName): $value" . PHP_EOL;
                 } else {
-                    // Interactive mode: prompt for all Stripe keys
                     $stripeKeys = [
                         'STRIPE_PUBLISHABLE_KEY',
                         'STRIPE_SECRET_KEY',
@@ -579,5 +587,5 @@ class KeyHelper
 }
 
 // Initialize and run the application
-$keyHelper = new KeyHelper();
+$keyHelper = new KeyHelper($argv);
 $keyHelper->run($argv);
