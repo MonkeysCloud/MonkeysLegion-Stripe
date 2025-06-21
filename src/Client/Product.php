@@ -4,7 +4,6 @@ namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\ProdcutInterface;
 use MonkeysLegion\Stripe\Client\StripeWrapper;
-use Stripe\StripeClient;
 
 class Product extends StripeWrapper implements ProdcutInterface
 {

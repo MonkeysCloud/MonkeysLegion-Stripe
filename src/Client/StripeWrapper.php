@@ -2,6 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Client;
 
+use MonkeysLegion\Stripe\Logger\Logger;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 use RuntimeException;
@@ -11,11 +12,18 @@ abstract class StripeWrapper
     protected StripeClient $stripe;
     protected array $stripeClients;
     protected bool $test_mode = true;
+    private Logger $logger;
 
-    public function __construct(array $stripeClients = [], bool $test_mode = true)
+    public function __construct(array $stripeClients = [], bool $test_mode = true, ?Logger $logger = null)
     {
         $this->stripeClients = $stripeClients;
         $this->setTestMode($test_mode);
+        $this->logger = $logger ?? new Logger();
+    }
+
+    public function setLogger(Logger $logger): void
+    {
+        $this->logger = $logger;
     }
 
     /**
@@ -41,6 +49,12 @@ abstract class StripeWrapper
         try {
             return $callback();
         } catch (ApiErrorException $e) {
+            $this->logger->log("Stripe API error: " . $e->getMessage(), [
+                'code' => $e->getCode(),
+                'type' => $e->getError()->type ?? null,
+                'param' => $e->getError()->param ?? null,
+                'request_id' => $e->getError()->requestId ?? null,
+            ]);
             throw new RuntimeException("Stripe error: " . $e->getMessage(), $e->getCode(), $e);
         }
     }

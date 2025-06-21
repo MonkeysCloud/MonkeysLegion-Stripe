@@ -3,7 +3,6 @@
 namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\CheckoutSessionInterface;
-use Stripe\StripeClient;
 
 class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
 {

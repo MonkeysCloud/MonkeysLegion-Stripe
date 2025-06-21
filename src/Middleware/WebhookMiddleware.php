@@ -14,7 +14,7 @@ class WebhookMiddleware
     private MemoryIdempotencyStore $idempotencyStore;
     private ?int $defaultTtl;
     private bool $testMode = true;
-    private const TEST_SECRET_KEY = 'test_key';
+    private const TEST_SECRET_KEY = 'webhook_secret_test';
     private const LIVE_SECRET_KEY = 'webhook_secret';
 
     public function __construct(

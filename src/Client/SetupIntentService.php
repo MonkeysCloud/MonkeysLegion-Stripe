@@ -3,7 +3,6 @@
 namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\SetupIntentServiceInterface;
-use Stripe\StripeClient;
 
 class SetupIntentService extends StripeWrapper implements SetupIntentServiceInterface
 {

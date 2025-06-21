@@ -2,8 +2,6 @@
 
 namespace MonkeysLegion\Stripe\Client;
 
-use Stripe\StripeClient;
-
 use MonkeysLegion\Stripe\Interface\SubscriptionInterface;
 
 class Subscription extends StripeWrapper implements SubscriptionInterface

@@ -3,7 +3,6 @@
 namespace MonkeysLegion\Stripe\Client;
 
 use MonkeysLegion\Stripe\Interface\StripeGatewayInterface;
-use Stripe\StripeClient;
 
 class StripeGateway extends StripeWrapper implements StripeGatewayInterface
 {
