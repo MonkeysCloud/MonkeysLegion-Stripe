@@ -41,6 +41,7 @@ php vendor/bin/key-helper webhook:test
 
 - PHP 8.4 or higher
 - MonkeysLegion Core ^1.0
+- MonkeysLegion DI ^1.0 (`composer require monkeyscloud/monkeyslegion-di`)
 - Stripe PHP SDK ^17.3
 
 ## Environment Awareness
@@ -85,31 +86,34 @@ php vendor/monkeyscloud/monkeyslegion-stripe/publish.php
 Configure your Stripe settings using the following environment variables:
 
 ```env
-# Stripe API keys
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_TEST_KEY=sk_test_...
+# Essential Stripe API keys (managed by key-helper)
+STRIPE_SECRET_KEY=sk_test_...            # Main secret key for backend API calls
+STRIPE_PUBLISHABLE_KEY=pk_test_...       # Public key for frontend Stripe.js
+STRIPE_WEBHOOK_SECRET=whsec_...          # Webhook secret for production/main environment
+STRIPE_TEST_KEY=sk_test_...              # Additional test secret key
+STRIPE_WEBHOOK_SECRET_TEST=whsec_...     # Webhook secret specifically for test mode
 
-# Stripe API configuration
-STRIPE_API_VERSION=2025-04-30
-STRIPE_CURRENCY=usd
-STRIPE_CURRENCY_LIMIT=100000 # Maximum transaction amount in smallest currency unit (e.g., cents)
+# Optional Stripe API configuration (not validated by key-helper)
+STRIPE_API_VERSION=2025-04-30            # Stripe API version your code expects
+STRIPE_CURRENCY=usd                      # Default currency for transactions
+STRIPE_CURRENCY_LIMIT=100000             # Maximum transaction amount in cents
 
-# Webhook configuration
-STRIPE_WEBHOOK_TOLERANCE=20 # Time tolerance for webhook signature validation (in seconds)
-STRIPE_WEBHOOK_DEFAULT_TTL=172800 # Default time-to-live for webhook events (in seconds)
+# Optional webhook configuration
+STRIPE_WEBHOOK_TOLERANCE=20              # Time tolerance for webhook signature validation (seconds)
+STRIPE_WEBHOOK_DEFAULT_TTL=172800        # Default time-to-live for webhook events (seconds)
 
-# Idempotency configuration
-STRIPE_IDEMPOTENCY_TABLE=stripe_memory # Database table for storing idempotency events
+# Optional idempotency configuration
+STRIPE_IDEMPOTENCY_TABLE=stripe_memory   # Database table for storing idempotency events
 
-# API request configuration
-STRIPE_TIMEOUT=60 # Timeout for API requests (in seconds)
-STRIPE_WEBHOOK_RETRIES=3 # Maximum number of retries for failed webhook events
+# Optional API request configuration
+STRIPE_TIMEOUT=60                        # Timeout for API requests (seconds)
+STRIPE_WEBHOOK_RETRIES=3                 # Maximum number of retries for failed webhook events
 
-# Stripe API endpoint
-STRIPE_API_URL=https://api.stripe.com
+# Optional Stripe API endpoint
+STRIPE_API_URL=https://api.stripe.com    # Stripe API base URL
 ```
+
+**Note**: The key-helper utility validates only the essential Stripe keys. Additional configuration variables can be added manually to your `.env` files as needed.
 
 ### Configuration Structure
 
@@ -133,87 +137,45 @@ return [
 ];
 ```
 
-## Service Registration
-
-### Automatic Registration
-
-The package automatically registers the following services in the ServiceContainer:
-
-- `stripe_http_client` - Dedicated HTTP client configured for Stripe API requests
-- `StripeClient` - Main Stripe API client with injected HTTP client
-
-(Register Stripe Service Provider In Your app.php First)
-
-### Manual Registration
-
-If you need to manually register the service provider:
-
-```php
-use MonkeysLegion\Stripe\Provider\StripeServiceProvider;
-use MonkeysLegion\Stripe\Service\ServiceContainer;
-
-$container = ServiceContainer::getInstance();
-$provider = new StripeServiceProvider($container);
-$provider->register();
-```
-
-## Usage
-
-### Basic HTTP Client Usage
-
-```php
-use MonkeysLegion\Stripe\Service\ServiceContainer;
-use Psr\Http\Client\ClientExceptionInterface;
-
-try {
-    $container = ServiceContainer::getInstance();
-    $stripeClient = $container->get('StripeClient');
-    
-    // Use the client to send PSR-7 requests
-    $response = $stripeClient->sendRequest($request);
-    // Process $response
-} catch (ClientExceptionInterface $e) {
-    // Handle HTTP client errors
-    echo 'Request failed: ' . $e->getMessage();
-}
-```
-
-### Service Container Integration
-
-```php
-use MonkeysLegion\Stripe\Service\ServiceContainer;
-
-$container = ServiceContainer::getInstance();
-
-// Get the Stripe HTTP client
-$httpClient = $container->get('stripe_http_client');
-
-// Get the main Stripe client
-$stripeClient = $container->get('StripeClient');
-```
-
 ## Key Management
 
 The package includes a comprehensive key management utility for generating, validating, and managing Stripe API keys and webhook secrets. All operations are performed through the command line interface.
 
+### Key-Helper Features
+
+- **Environment-Aware**: Works with `.env.dev`, `.env.prod`, `.env.test` files
+- **Secure Key Generation**: Uses cryptographically secure random bytes
+- **Format Validation**: Validates Stripe key formats and structures
+- **Interactive Setup**: Guided setup for all essential Stripe keys
+- **Key Rotation**: Safe rotation of existing keys with backup
+- **Webhook Testing**: Live webhook secret validation with Stripe SDK
+- **Batch Operations**: Validate all keys at once or individually
+
 ### Command Reference
 
 ```bash
-php vendor/bin/key-helper [COMMAND] [OPTIONS]
+php vendor/bin/key-helper [--stage=dev|prod|test] [COMMAND] [OPTIONS]
 
 Available Commands:
-  generate [KEY_TYPE]          # Generate and save a new key
+  generate [KEY_TYPE]          # Generate and save a new key (default: STRIPE_SECRET_KEY)
   set [KEY_NAME] [VALUE]       # Set a specific key or enter interactive mode
-  rotate [KEY_TYPE]            # Rotate (replace) an existing key
+  rotate [KEY_TYPE]            # Rotate (replace) an existing key with backup
   validate [KEY_TYPE]          # Validate keys (all if no type specified)
   show [KEY_TYPE]              # Display current key value
-  list                         # List all Stripe/webhook keys
-  webhook:test                 # Test webhook secret validation
+  list                         # List all Stripe/webhook keys in environment
+  webhook:test                 # Test webhook secret validation with simulated payload
 
-Key Types:
+Available Key Types:
   secret                       # STRIPE_SECRET_KEY
-  publishable                  # STRIPE_PUBLISHABLE_KEY  
+  test                         # STRIPE_TEST_KEY
+  publishable                  # STRIPE_PUBLISHABLE_KEY
   webhook                      # STRIPE_WEBHOOK_SECRET
+  webhook_test                 # STRIPE_WEBHOOK_SECRET_TEST
+
+Stage Options:
+  --stage=dev                  # Use .env.dev file (default)
+  --stage=prod                 # Use .env.prod file
+  --stage=test                 # Use .env.test file
 ```
 
 ### Environment-Specific Key Management
@@ -239,9 +201,9 @@ The `.env.<stage>` file will be updated or validated based on the specified stag
 
 ### Generate New Keys
 
-#### Generate Default App Key
+#### Generate Default Secret Key
 ```bash
-# Generates STRIPE_APP_KEY (64-character hex string)
+# Generates STRIPE_SECRET_KEY (sk_test_* format)
 php vendor/bin/key-helper generate
 ```
 
@@ -255,6 +217,30 @@ php vendor/bin/key-helper generate secret
 
 # Generate publishable key placeholder
 php vendor/bin/key-helper generate publishable
+
+# Generate test webhook secret
+php vendor/bin/key-helper generate webhook_test
+```
+
+### Rotate Keys
+
+#### Rotate Security Keys
+```bash
+# Rotate secret keys with new generated values
+php vendor/bin/key-helper rotate secret
+php vendor/bin/key-helper rotate webhook
+php vendor/bin/key-helper rotate publishable
+php vendor/bin/key-helper rotate webhook_test
+```
+
+#### Environment-Specific Rotation
+```bash
+# Rotate production keys
+php vendor/bin/key-helper --stage=prod rotate secret
+php vendor/bin/key-helper --stage=prod rotate webhook
+
+# Rotate test environment keys
+php vendor/bin/key-helper --stage=test rotate webhook
 ```
 
 ### Set Keys
@@ -275,8 +261,10 @@ php vendor/bin/key-helper set
 
 # Interactive prompts for:
 # - STRIPE_PUBLISHABLE_KEY
-# - STRIPE_SECRET_KEY  
+# - STRIPE_SECRET_KEY
+# - STRIPE_TEST_KEY
 # - STRIPE_WEBHOOK_SECRET
+# - STRIPE_WEBHOOK_SECRET_TEST
 # - STRIPE_API_VERSION
 # Press Enter to skip any key
 ```
@@ -292,18 +280,460 @@ php vendor/bin/key-helper validate
 # ✅ STRIPE_SECRET_KEY (secret): VALID
 # ✅ STRIPE_PUBLISHABLE_KEY (publishable): VALID  
 # ⚠️  STRIPE_WEBHOOK_SECRET (webhook): NOT SET
-# ✅ STRIPE_API_VERSION: VALID
+# ✅ STRIPE_WEBHOOK_SECRET_TEST (webhook_test): VALID
+```
+
+#### Validate Specific Keys
+```bash
+# Validate individual key types
+php vendor/bin/key-helper validate secret
+php vendor/bin/key-helper validate webhook
+php vendor/bin/key-helper validate webhook_test
 ```
 
 #### Validate Keys for a Specific Environment
 ```bash
 # Validate keys for the test environment
 php vendor/bin/key-helper --stage=test validate
+
+# Validate specific key in production
+php vendor/bin/key-helper --stage=prod validate secret
 ```
 
-## Webhook Handling
+### Advanced Key Management
 
-This package provides a robust webhook handling system that securely processes Stripe events while preventing duplicate processing.
+#### Show Current Key Values
+```bash
+# Display current key values
+php vendor/bin/key-helper show secret
+php vendor/bin/key-helper show webhook
+php vendor/bin/key-helper show webhook_test
+
+# Show keys for specific environment
+php vendor/bin/key-helper --stage=prod show secret
+```
+
+#### List All Configuration Keys
+```bash
+# List all STRIPE and WEBHOOK keys
+php vendor/bin/key-helper list
+
+# Example output:
+# STRIPE and WEBHOOK keys found:
+#   STRIPE_SECRET_KEY = sk_test_...
+#   STRIPE_PUBLISHABLE_KEY = pk_test_...
+#   STRIPE_WEBHOOK_SECRET = whsec_...
+#   STRIPE_WEBHOOK_SECRET_TEST = whsec_...
+```
+
+#### Webhook Secret Testing
+```bash
+# Test webhook secret validation with simulated Stripe payload
+php vendor/bin/key-helper webhook:test
+
+# Example output:
+# Testing webhook secret validation...
+# ✅ Webhook secret validation: VALID
+# HTTP Status: 200 OK
+# Process Time: 15.42ms
+# Event Type: payment_intent.succeeded
+```
+
+### Key Validation Features
+
+The key-helper validates different types of keys with specific format requirements:
+
+#### Supported Validation Types
+- **Stripe Secret Keys**: `sk_test_*` or `sk_live_*` format, minimum 20 characters
+- **Stripe Publishable Keys**: `pk_test_*` or `pk_live_*` format, minimum 20 characters  
+- **Webhook Secrets**: `whsec_*` format, minimum 7 characters
+- **Generated Keys**: 64-character hexadecimal strings for app keys
+- **Placeholder Validation**: Accepts partial keys ending with `...` for development
+
+#### Error Handling
+```bash
+# Example validation errors:
+# ❌ STRIPE_SECRET_KEY (secret): INVALID
+# ⚠️  STRIPE_WEBHOOK_SECRET (webhook): NOT SET
+# ✅ STRIPE_PUBLISHABLE_KEY (publishable): VALID
+```
+
+### Environment File Management
+
+The key-helper safely manages environment files with these features:
+
+#### File Safety
+- **Atomic Operations**: All file operations are atomic to prevent corruption
+- **Backup on Rotation**: Old keys are displayed before replacement
+- **Comment Preservation**: Comments in `.env` files are preserved during updates
+- **Directory Creation**: Automatically creates directories if they don't exist
+
+#### Multi-Environment Support
+- **Stage-Specific Files**: Supports `.env.dev`, `.env.prod`, `.env.test`
+- **Environment Isolation**: Each environment has separate key management
+- **Consistent Interface**: Same commands work across all environments
+
+#### Key Generation Security
+- **Cryptographically Secure**: Uses PHP's `random_bytes()` for key generation
+- **Appropriate Formats**: Generates keys in correct Stripe format (sk_test_, pk_test_, whsec_)
+- **Configurable Length**: Supports different key lengths for different purposes
+
+## Service Registration
+
+### Registration
+(In Your app.php)
+
+register the service provider by:
+Install DI package via Composer:
+
+```bash
+composer require monkeyscloud/monkeyslegion-stripe
+```php
+use MonkeysLegion\DI\ContainerBuilder;
+use MonkeysLegion\Stripe\Provider\StripeServiceProvider;
+
+// Create a new container builder instance
+$containerBuilder = new ContainerBuilder();
+
+// Register the Stripe service provider
+StripeServiceProvider::register($containerBuilder);
+
+// Build the container
+$container = $containerBuilder->build();
+
+// Globalize it
+define('ML_CONTAINER', $container);
+
+// Get Stripe services using class names
+$stripeClient = ML_CONTAINER->get(\Stripe\StripeClient::class);
+$stripeGateway = ML_CONTAINER->get(\MonkeysLegion\Stripe\Client\StripeGateway::class);
+$checkoutSession = ML_CONTAINER->get(\MonkeysLegion\Stripe\Client\CheckoutSession::class);
+$subscription = ML_CONTAINER->get(\MonkeysLegion\Stripe\Client\Subscription::class);
+$product = ML_CONTAINER->get(\MonkeysLegion\Stripe\Client\Product::class);
+$setupIntentService = ML_CONTAINER->get(\MonkeysLegion\Stripe\Client\SetupIntentService::class);
+$webhookController = ML_CONTAINER->get(\MonkeysLegion\Stripe\Webhook\WebhookController::class);
+```
+### Test Mode Management
+
+All client services support switching between test and live modes:
+
+```php
+// Switch to test mode (default)
+$stripeGateway->setTestMode(true);      // Uses STRIPE_TEST_KEY
+$checkoutSession->setTestMode(true);    // Uses STRIPE_TEST_KEY
+$subscription->setTestMode(true);       // Uses STRIPE_TEST_KEY
+
+// Switch to live mode for production
+$stripeGateway->setTestMode(false);     // Uses STRIPE_SECRET_KEY
+$checkoutSession->setTestMode(false);   // Uses STRIPE_SECRET_KEY
+$subscription->setTestMode(false);      // Uses STRIPE_SECRET_KEY
+
+// You may use this approach if you prefer
+$isProduction = ($_ENV['APP_ENV'] ?? 'dev') === 'prod';
+$stripeGateway->setTestMode(!$isProduction);
+```
+
+## Usage
+
+### Payment Intent Operations
+
+```php
+// Get the gateway service
+$stripeGateway = $container->get(\MonkeysLegion\Stripe\Client\StripeGateway::class);
+
+// Create a payment intent
+$paymentIntent = $stripeGateway->createPaymentIntent(
+    2000,        // amount in cents
+    'usd',       // currency
+    true         // enable automatic payment methods
+);
+
+// Retrieve a payment intent
+$paymentIntent = $stripeGateway->retrievePaymentIntent('pi_1234567890');
+
+// Confirm a payment intent
+$confirmedPayment = $stripeGateway->confirmPaymentIntent('pi_1234567890', [
+    'payment_method' => 'pm_card_visa'
+]);
+
+// Cancel a payment intent
+$cancelledPayment = $stripeGateway->cancelPaymentIntent('pi_1234567890');
+
+// Capture a payment intent (for manual capture)
+$capturedPayment = $stripeGateway->capturePaymentIntent('pi_1234567890');
+
+// Refund a payment intent
+$refund = $stripeGateway->refundPaymentIntent('pi_1234567890', [
+    'amount' => 1000  // partial refund
+]);
+
+// Update a payment intent
+$updatedPayment = $stripeGateway->updatePaymentIntent('pi_1234567890', [
+    'description' => 'Updated payment description'
+]);
+
+// List payment intents
+$paymentIntents = $stripeGateway->listPaymentIntent([
+    'limit' => 10,
+    'customer' => 'cus_1234567890'
+]);
+
+// Search payment intents
+$searchResults = $stripeGateway->searchPaymentIntent([
+    'query' => 'status:\'succeeded\' AND metadata[\'order_id\']:\'12345\''
+]);
+
+// Increment authorization
+$incrementedPayment = $stripeGateway->incrementAuthorization('pi_1234567890', 500);
+
+// Check if payment intent is valid
+$isValid = $stripeGateway->isValidPaymentIntent('pi_1234567890');
+```
+
+### Checkout Session Operations
+
+```php
+// Get the checkout service
+$checkoutSession = $container->get(\MonkeysLegion\Stripe\Client\CheckoutSession::class);
+
+// Create a checkout session
+$session = $checkoutSession->createCheckoutSession([
+    'mode' => 'payment',
+    'line_items' => [
+        [
+            'price_data' => [
+                'currency' => 'usd',
+                'product_data' => [
+                    'name' => 'Premium Plan'
+                ],
+                'unit_amount' => 2000,
+            ],
+            'quantity' => 1,
+        ],
+    ],
+    'success_url' => 'https://example.com/success?session_id={CHECKOUT_SESSION_ID}',
+    'cancel_url' => 'https://example.com/cancel',
+]);
+
+// Retrieve a checkout session
+$session = $checkoutSession->retrieveCheckoutSession('cs_1234567890');
+
+// List checkout sessions
+$sessions = $checkoutSession->listCheckoutSessions([
+    'limit' => 10
+]);
+
+// Expire a checkout session
+$expiredSession = $checkoutSession->expireCheckoutSession('cs_1234567890');
+
+// List line items from a session
+$lineItems = $checkoutSession->listLineItems('cs_1234567890');
+
+// Get checkout URL directly
+$checkoutUrl = $checkoutSession->getCheckoutUrl([
+    'mode' => 'payment',
+    'line_items' => [/* ... */],
+    'success_url' => 'https://example.com/success',
+    'cancel_url' => 'https://example.com/cancel',
+]);
+
+// Validate checkout session
+$isValid = $checkoutSession->isValidCheckoutSession('cs_1234567890');
+
+// Check if session is expired
+$isExpired = $checkoutSession->isExpiredCheckoutSession('cs_1234567890');
+```
+
+### Subscription Operations
+
+```php
+// Get the subscription service
+$subscription = $container->get(\MonkeysLegion\Stripe\Client\Subscription::class);
+
+// Create a subscription
+$newSubscription = $subscription->createSubscription(
+    'cus_1234567890',  // customer ID
+    'price_1234567890', // price ID
+    [
+        'trial_period_days' => 7,
+        'metadata' => ['plan' => 'premium']
+    ]
+);
+
+// Retrieve a subscription
+$subscription = $subscription->retrieveSubscription('sub_1234567890');
+
+// Update a subscription
+$updatedSubscription = $subscription->updateSubscription('sub_1234567890', [
+    'metadata' => ['updated' => 'true'],
+    'proration_behavior' => 'create_prorations'
+]);
+
+// Cancel a subscription
+$cancelledSubscription = $subscription->cancelSubscription('sub_1234567890', [
+    'at_period_end' => true
+]);
+
+// List customer subscriptions
+$subscriptions = $subscription->listSubscriptions('cus_1234567890', [
+    'status' => 'active',
+    'limit' => 10
+]);
+
+// Resume a subscription
+$resumedSubscription = $subscription->resumeSubscription('sub_1234567890');
+
+// Search subscriptions
+$searchResults = $subscription->searchSubscriptions([
+    'query' => 'status:\'active\' AND metadata[\'plan\']:\'premium\''
+]);
+```
+
+### Product Operations
+
+```php
+// Get the product service
+$product = $container->get(\MonkeysLegion\Stripe\Client\Product::class);
+
+// Create a product
+$newProduct = $product->createProduct([
+    'name' => 'Premium Software License',
+    'description' => 'Annual software license with premium features',
+    'metadata' => ['category' => 'software']
+]);
+
+// Retrieve a product
+$product = $product->retrieveProduct('prod_1234567890');
+
+// Update a product
+$updatedProduct = $product->updateProduct('prod_1234567890', [
+    'name' => 'Updated Premium License',
+    'description' => 'Updated description'
+]);
+
+// Delete a product
+$deletedProduct = $product->deleteProduct('prod_1234567890');
+
+// List products
+$products = $product->listProducts([
+    'active' => true,
+    'limit' => 10
+]);
+
+// Search products
+$searchResults = $product->searchProducts(
+    'metadata[\'category\']:\'software\'',
+    ['limit' => 20]
+);
+```
+
+### Setup Intent Operations
+
+```php
+// Get the setup intent service
+$setupIntentService = $container->get(\MonkeysLegion\Stripe\Client\SetupIntentService::class);
+
+// Create a setup intent
+$setupIntent = $setupIntentService->createSetupIntent([
+    'customer' => 'cus_1234567890',
+    'payment_method_types' => ['card'],
+    'usage' => 'off_session'
+]);
+
+// Retrieve a setup intent
+$setupIntent = $setupIntentService->retrieveSetupIntent('seti_1234567890');
+
+// Confirm a setup intent
+$confirmedSetupIntent = $setupIntentService->confirmSetupIntent('seti_1234567890', [
+    'payment_method' => 'pm_card_visa'
+]);
+
+// Cancel a setup intent
+$cancelledSetupIntent = $setupIntentService->cancelSetupIntent('seti_1234567890');
+
+// Update a setup intent
+$updatedSetupIntent = $setupIntentService->updateSetupIntent('seti_1234567890', [
+    'metadata' => ['updated' => 'true']
+]);
+
+// List setup intents
+$setupIntents = $setupIntentService->listSetupIntents([
+    'customer' => 'cus_1234567890',
+    'limit' => 10
+]);
+
+// Validate setup intent
+$isValid = $setupIntentService->isValidSetupIntent('seti_1234567890');
+```
+
+### Webhook Handling
+### Setting Up Webhooks
+
+1. **Configure Webhook Secret**
+   ```bash
+   # Set your webhook secret from Stripe Dashboard
+   php vendor/bin/key-helper set STRIPE_WEBHOOK_SECRET whsec_your_secret_here
+   
+   # Verify it's configured correctly
+   php vendor/bin/key-helper webhook:test
+   ```
+
+```php
+// Get the webhook controller
+$webhookController = ML_CONTAINER->get(\MonkeysLegion\Stripe\Webhook\WebhookController::class);
+
+// Handle incoming webhook
+$payload = file_get_contents('php://input');
+$sigHeader = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
+
+$result = $webhookController->handle($payload, $sigHeader, function($event) {
+    return ['status' => 'success', 'event' => $event['type']];
+});
+
+// Complete webhook endpoint example
+function handleWebhook() {
+    // This should be at your app.php
+    $containerBuilder = new ContainerBuilder();
+    StripeServiceProvider::register($containerBuilder);
+    $container = $containerBuilder->build();
+    define('ML_CONTAINER', $container);
+    
+    // 
+    $webhookController = ML_CONTAINER->get(\MonkeysLegion\Stripe\Webhook\WebhookController::class);
+    
+    $payload = file_get_contents('php://input');
+    $sigHeader = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
+    
+    try {
+        $result = $webhookController->handle($payload, $sigHeader, function ($event) {
+            // Your event handling logic here
+            return processStripeEvent($event);
+        });
+
+        http_response_code(200);
+        echo json_encode($result);
+    } catch (\Throwable $e) {
+        $code = $e->getCode();
+
+        // Ensure we don't return invalid HTTP codes
+        if ($code < 100 || $code >= 600) $code = 500
+
+        http_response_code($code);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+```
+```php
+// Production mode (APP_ENV=prod):
+// - Retries: Rate limits, API connection errors, server errors (5xx)
+// - No Retry: Card errors, invalid requests, authentication errors
+// - Uses exponential backoff: 60s, 120s, 180s
+
+// Development mode (APP_ENV=dev):
+// - No retries for any errors (fail fast for debugging)
+// - Immediate error reporting
+```
+This package provides also a robust webhook handling system that securely processes Stripe events while preventing duplicate processing.
 
 ### Environment-Aware Storage
 
@@ -329,87 +759,9 @@ In production mode (`APP_ENV=prod`), the webhook system provides additional robu
 - **Enhanced Logging**: Detailed error logging and retry attempts
 - **Timeout Handling**: Process forking with timeout enforcement (Linux/Unix only)
 
-### Setting Up Webhooks
-
-1. **Configure Webhook Secret**
-   ```bash
-   # Set your webhook secret from Stripe Dashboard
-   php vendor/bin/key-helper set STRIPE_WEBHOOK_SECRET whsec_your_secret_here
-   
-   # Verify it's configured correctly
-   php vendor/bin/key-helper webhook:test
-   ```
-
-2. **Create a Webhook Endpoint**
-   ```php
-   <?php
-   // webhook.php
-   
-   require_once 'vendor/autoload.php';
-   
-   use MonkeysLegion\Stripe\Service\ServiceContainer;
-   
-   // Get the raw POST data
-   $payload = file_get_contents('php://input');
-   $sigHeader = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
-   
-   try {
-       $container = ServiceContainer::getInstance();
-       $webhookController = $container->get('webhook_controller');
-       
-       // Process the webhook
-       $result = $webhookController->handle($payload, $sigHeader, function($event) {
-           // Handle different event types
-           switch ($event['type']) {
-               case 'payment_intent.succeeded':
-                   // Handle successful payment
-                   $paymentIntent = $event['data']['object'];
-                   // Process order, send confirmation, etc.
-                   break;
-                   
-               case 'customer.subscription.created':
-                   // Handle new subscription
-                   $subscription = $event['data']['object'];
-                   // Update user subscription status
-                   break;
-                   
-               // Handle other event types...
-           }
-           
-           // Return success response
-           return ['status' => 'success', 'event' => $event['type']];
-       });
-       
-       // Output success
-       http_response_code(200);
-       echo json_encode($result);
-       
-   } catch (\Stripe\Exception\SignatureVerificationException $e) {
-       // Invalid signature
-       http_response_code(400);
-       echo json_encode(['error' => 'Invalid signature']);
-       
-   } catch (\Exception $e) {
-       // Other errors
-       http_response_code(500);
-       echo json_encode(['error' => $e->getMessage()]);
-   }
-   ```
-
 ### Error Handling & Retry Logic
 
 The webhook controller implements intelligent error handling based on the environment:
-
-```php
-// Production mode (APP_ENV=prod):
-// - Retries: Rate limits, API connection errors, server errors (5xx)
-// - No Retry: Card errors, invalid requests, authentication errors
-// - Uses exponential backoff: 60s, 120s, 180s
-
-// Development mode (APP_ENV=dev):
-// - No retries for any errors (fail fast for debugging)
-// - Immediate error reporting
-```
 
 ### Storage Implementation Details
 
@@ -445,7 +797,6 @@ CREATE TABLE idempotency_store (
     INDEX idx_event_id (event_id),
     INDEX idx_expiry (expiry)
 );
-```
 ```
 
 ### Configuring Webhook Processing
