@@ -5,6 +5,20 @@
 
 First-class Stripe integration package for the MonkeysLegion PHP framework, providing PSR-compliant HTTP clients and service container integration.
 
+## 📋 What You'll Learn
+
+This documentation covers everything you need to integrate Stripe payments into your MonkeysLegion application:
+
+- **🚀 Quick Start**: Get up and running in minutes with automated setup
+- **🔧 Configuration**: Environment variables, key management, and security setup
+- **🔑 Key Management**: Interactive CLI tools for managing Stripe API keys and webhook secrets
+- **📋 Service Registration**: Dependency injection setup with MonkeysLegion DI container
+- **💳 Payment Operations**: Complete API for payment intents, checkout sessions, subscriptions, and products
+- **🔄 Test/Live Mode**: Seamless switching between test and production environments
+- **🪝 Webhook Handling**: Secure webhook processing with signature verification and idempotency
+- **📊 Logging**: PSR-3 compatible logging with Monolog integration
+- **🛡️ Security**: Payload validation, size limits, and secure key storage
+
 ## Documentation
 All usage, configuration, and API references can be found in the [official Monkeys Legion Stripe package documentation](https://monkeyslegion.com/docs/packages/stripe).
 
@@ -101,6 +115,7 @@ STRIPE_CURRENCY_LIMIT=100000             # Maximum transaction amount in cents
 # Optional webhook configuration
 STRIPE_WEBHOOK_TOLERANCE=20              # Time tolerance for webhook signature validation (seconds)
 STRIPE_WEBHOOK_DEFAULT_TTL=172800        # Default time-to-live for webhook events (seconds)
+STRIPE_MAX_PAYLOAD_SIZE=131072           # Maximum webhook payload size in bytes (default: 128KB)
 
 # Optional idempotency configuration
 STRIPE_IDEMPOTENCY_TABLE=stripe_memory   # Database table for storing idempotency events
@@ -818,7 +833,62 @@ By default, processed events are stored for 48 hours. You can customize this:
 ```php
 // In your app configuration
 return [
-    'webhook_default_ttl' => 86400, // 24 hours (in seconds)
-    // ...other config
+    'webhook_default_ttl' => 86400, // 24 hours (in seconds)    // ...other config
 ];
 ```
+
+## PSR-3 Logger Integration
+
+The package includes built-in PSR-3 logger support for comprehensive logging of Stripe operations and webhook processing.
+
+### Default Logger Behavior
+
+By default, the package uses an internal Logger class that supports PSR-3 LoggerInterface. The logging behavior adapts to your environment:
+
+- **Development** (`APP_ENV=dev`): Debug level messages
+- **Testing** (`APP_ENV=test`): Notice level messages  
+- **Production** (`APP_ENV=prod`): Warning level messages
+
+### Configuring Custom Logger
+
+To use your own PSR-3 compatible logger (like Monolog), configure it through the service provider:
+
+```php
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+use MonkeysLegion\Stripe\Provider\StripeServiceProvider;
+
+// Create your Monolog logger
+$monolog = new Logger('stripe');
+$monolog->pushHandler(new StreamHandler('path/to/stripe.log', Logger::DEBUG));
+
+// Set it in the Stripe service provider
+StripeServiceProvider::setLogger($monolog);
+```
+
+### Logger Features
+
+- **Structured Logging**: Includes context data like request IDs, error codes, and retry counts
+- **Environment-Aware**: Automatically adjusts log levels based on APP_ENV
+- **Operation Tracking**: Logs all Stripe API calls, webhook processing, and error handling
+- **Security**: Sensitive data like API keys are never logged
+
+### Webhook Payload Size Limits
+
+For security, webhook payloads are limited to a maximum size to prevent memory exhaustion attacks:
+
+- **Default Size Limit**: 128KB (131,072 bytes)
+- **Environment Variable**: `STRIPE_MAX_PAYLOAD_SIZE=131072`
+- **Automatic Validation**: Payloads exceeding the limit are rejected with detailed logging
+
+```env
+# Configure webhook payload size limit
+STRIPE_MAX_PAYLOAD_SIZE=131072  # 128KB (default)
+STRIPE_MAX_PAYLOAD_SIZE=262144  # 256KB (custom)
+```
+
+The payload validation includes:
+- Size limit checking
+- JSON format validation  
+- Empty payload detection
+- Detailed error logging for debugging
