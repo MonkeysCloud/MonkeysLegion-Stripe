@@ -8,13 +8,6 @@ use Stripe\StripeClient;
 
 class Product extends StripeWrapper implements ProdcutInterface
 {
-    private StripeClient $stripe;
-
-    public function __construct(StripeClient $stripeClient)
-    {
-        $this->stripe = $stripeClient;
-    }
-
     public function createProduct(array $params): \Stripe\Product
     {
         return $this->handle(function () use ($params) {

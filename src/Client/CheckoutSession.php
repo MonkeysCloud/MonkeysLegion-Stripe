@@ -7,18 +7,9 @@ use Stripe\StripeClient;
 
 class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
 {
-    private StripeClient $stripe;
-
-    public function __construct(StripeClient $stripeClient)
-    {
-        $this->stripe = $stripeClient;
-    }
-
     public function createCheckoutSession(array $params): \Stripe\Checkout\Session
     {
-        if (empty($params['line_items']) && empty($params['mode'])) {
-            throw new \InvalidArgumentException('line_items and mode are required to create a Checkout Session.');
-        }
+        $this->validateRequired($params, ['line_items', 'mode']);
 
         return $this->handle(function () use ($params) {
             return $this->stripe->checkout->sessions->create($params);

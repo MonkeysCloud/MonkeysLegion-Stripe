@@ -42,7 +42,8 @@ class StripeServiceProvider
         // Register in internal container
         $in_container->set('connection', fn() => new Connection($mergedDbConfig));
         $in_container->set('query_builder', fn() => new QueryBuilder($in_container->get('connection')));
-        $in_container->set('stripe_client', fn() => new StripeClient($mergedStripeConfig['test_key']));
+        $in_container->set('stripe_client', fn() => new StripeClient($mergedStripeConfig['secret_key']));
+        $in_container->set('stripe_client_test', fn() => new StripeClient($mergedStripeConfig['test_key']));
         $in_container->set('memory_idempotency_store', function () use ($in_container) {
             $appEnv = $_ENV['APP_ENV'] ?? 'dev';
             return match ($appEnv) {
@@ -51,21 +52,38 @@ class StripeServiceProvider
             };
         });
         $in_container->set('webhook_middleware', fn() => new WebhookMiddleware(
-            $mergedStripeConfig['webhook_secret'],
+            array_intersect_key($mergedStripeConfig, array_flip(['test_key', 'webhook_secret'])),
             $mergedStripeConfig['webhook_tolerance'],
             $in_container->get('memory_idempotency_store'),
-            $mergedStripeConfig['webhook_default_ttl']
+            $mergedStripeConfig['webhook_default_ttl'],
+            true
         ));
         $in_container->set('webhook_controller', fn() => new WebhookController(
             $in_container->get('webhook_middleware'),
             $in_container->get('memory_idempotency_store'),
             $in_container
         ));
-        $in_container->set('stripe_gateway', fn() => new StripeGateway($in_container->get('stripe_client')));
-        $in_container->set('setup_intent_service', fn() => new SetupIntentService($in_container->get('stripe_client')));
-        $in_container->set('checkout_session', fn() => new CheckoutSession($in_container->get('stripe_client')));
-        $in_container->set('subscription', fn() => new Subscription($in_container->get('stripe_client')));
-        $in_container->set('product', fn() => new Product($in_container->get('stripe_client')));
+
+        $in_container->set('stripe_gateway', fn() => new StripeGateway([
+            $in_container->get('stripe_client_test'),
+            $in_container->get('stripe_client')
+        ]));
+        $in_container->set('setup_intent_service', fn() => new SetupIntentService([
+            $in_container->get('stripe_client_test'),
+            $in_container->get('stripe_client')
+        ]));
+        $in_container->set('checkout_session', fn() => new CheckoutSession([
+            $in_container->get('stripe_client_test'),
+            $in_container->get('stripe_client')
+        ]));
+        $in_container->set('subscription', fn() => new Subscription([
+            $in_container->get('stripe_client_test'),
+            $in_container->get('stripe_client')
+        ]));
+        $in_container->set('product', fn() => new Product([
+            $in_container->get('stripe_client_test'),
+            $in_container->get('stripe_client')
+        ]));
 
         // Register in ContainerBuilder using the same instances
         $c->addDefinitions([

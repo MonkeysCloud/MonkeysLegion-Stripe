@@ -7,13 +7,6 @@ use Stripe\StripeClient;
 
 class SetupIntentService extends StripeWrapper implements SetupIntentServiceInterface
 {
-
-    private StripeClient $stripe;
-    public function __construct(StripeClient $stripeClient)
-    {
-        $this->stripe = $stripeClient;
-    }
-
     public function createSetupIntent(array $params): \Stripe\SetupIntent
     {
         if (!isset($params['payment_method_types'])) {

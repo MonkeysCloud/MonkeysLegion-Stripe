@@ -8,22 +8,46 @@ use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 
 class WebhookMiddleware
 {
-    private string $endpointSecret;
+    private array $endpointSecrets;
+    private ?string $endpointSecret;
     private int $tolerance;
     private MemoryIdempotencyStore $idempotencyStore;
     private ?int $defaultTtl;
+    private bool $testMode = true;
+    private const TEST_SECRET_KEY = 'test_key';
+    private const LIVE_SECRET_KEY = 'webhook_secret';
 
     public function __construct(
-        string $endpointSecret,
+        array $endpointSecrets,
         int $tolerance,
         MemoryIdempotencyStore $idempotencyStore,
-        ?int $defaultTtl = 172800 // 48 hours default
+        ?int $defaultTtl = 172800, // 48 hours default
+        bool $testMode = true
     ) {
-        $this->endpointSecret = $endpointSecret;
+        $this->endpointSecrets = $endpointSecrets;
         $this->tolerance = $tolerance;
         $this->idempotencyStore = $idempotencyStore;
         $this->defaultTtl = $defaultTtl;
+        $this->setTestMode($testMode);
     }
+
+    /**
+     * Set the test mode for the webhook middleware.
+     *
+     * @param bool $testMode true for test mode, false for live mode
+     */
+    public function setTestMode(bool $testMode): void
+    {
+        $this->testMode = $testMode;
+        $key_name = $this->testMode ? self::TEST_SECRET_KEY : self::LIVE_SECRET_KEY;
+
+        if (!isset($this->endpointSecrets[$key_name])) {
+            throw new \RuntimeException("{$key_name} for mode is missing.");
+        }
+
+        $this->endpointSecret = $this->endpointSecrets[$key_name];
+    }
+
 
     /**
      * Verify webhook signature and handle idempotency

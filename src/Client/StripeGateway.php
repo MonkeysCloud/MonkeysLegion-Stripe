@@ -7,13 +7,6 @@ use Stripe\StripeClient;
 
 class StripeGateway extends StripeWrapper implements StripeGatewayInterface
 {
-    private StripeClient $stripe;
-
-    public function __construct(StripeClient $stripeClient)
-    {
-        $this->stripe = $stripeClient;
-    }
-
     public function createPaymentIntent(int $amount, string $currency = 'usd', bool $automatic_payment_methods = true): \Stripe\PaymentIntent
     {
         return $this->handle(function () use ($amount, $currency, $automatic_payment_methods) {

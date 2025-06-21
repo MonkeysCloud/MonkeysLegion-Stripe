@@ -1,18 +1,13 @@
 <?php
 
 namespace MonkeysLegion\Stripe\Client;
+
 use Stripe\StripeClient;
 
 use MonkeysLegion\Stripe\Interface\SubscriptionInterface;
 
 class Subscription extends StripeWrapper implements SubscriptionInterface
 {
-    private StripeClient $stripe;
-    public function __construct(StripeClient $stripeClient)
-    {
-        $this->stripe = $stripeClient;
-    }
-
     public function createSubscription(string $customerId, string $priceId, array $options = []): \Stripe\Subscription
     {
         return $this->handle(function () use ($customerId, $priceId, $options) {
