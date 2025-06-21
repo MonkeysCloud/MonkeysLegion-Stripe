@@ -8,7 +8,6 @@ First-class Stripe integration package for the MonkeysLegion PHP framework, prov
 ## Documentation
 All usage, configuration, and API references can be found in the [official Monkeys Legion Stripe package documentation](https://monkeyslegion.com/docs/packages/stripe).
 
-
 ## 🚀 Quick Start
 
 ```bash
@@ -36,6 +35,7 @@ php vendor/bin/key-helper webhook:test
 - **HTTP Client Abstraction**: PSR-18 HTTP client implementation
 - **Key Management**: Built-in tools for managing Stripe API keys and webhook secrets
 - **Webhook Testing**: Comprehensive webhook signature validation testing
+- **Environment Awareness**: Supports `.env.<stage>` files for `dev`, `prod`, and `test` environments
 
 ## Requirements
 
@@ -43,14 +43,24 @@ php vendor/bin/key-helper webhook:test
 - MonkeysLegion Core ^1.0
 - Stripe PHP SDK ^17.3
 
-## PSR Standards Compliance
+## Environment Awareness
 
-This package implements the following PSR standards:
+The package supports environment-specific configurations using `.env.<stage>` files. By default, the `dev` environment is used. You can specify the environment using the `--stage` flag.
 
-- **PSR-11**: Container Interface (`psr/container: ^2.0`)
-- **PSR-18**: HTTP Client Interface (`psr/http-client: ^1.0`)
-- **PSR-17**: HTTP Factories Interface (`psr/http-factory: ^1.1`)
-- **PSR-3**: Logger Interface (`psr/log: ^3.0`)
+### Example
+
+```bash
+# Use the dev environment (default)
+php vendor/bin/key-helper validate
+
+# Use the test environment
+php vendor/bin/key-helper --stage=test validate
+
+# Use the production environment
+php vendor/bin/key-helper --stage=prod validate
+```
+
+The `.env.<stage>` file will be used based on the specified stage.
 
 ## Installation
 
@@ -70,18 +80,35 @@ Publish the configuration file to your project:
 php vendor/monkeyscloud/monkeyslegion-stripe/publish.php
 ```
 
-This copies the Stripe configuration file to your project's `config/stripe.php` directory.
-
 ### Environment Variables
 
-Configure your Stripe settings using environment variables:
+Configure your Stripe settings using the following environment variables:
 
 ```env
+# Stripe API keys
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_TEST_KEY=sk_test_...
+
+# Stripe API configuration
 STRIPE_API_VERSION=2025-04-30
 STRIPE_CURRENCY=usd
+STRIPE_CURRENCY_LIMIT=100000 # Maximum transaction amount in smallest currency unit (e.g., cents)
+
+# Webhook configuration
+STRIPE_WEBHOOK_TOLERANCE=20 # Time tolerance for webhook signature validation (in seconds)
+STRIPE_WEBHOOK_DEFAULT_TTL=172800 # Default time-to-live for webhook events (in seconds)
+
+# Idempotency configuration
+STRIPE_IDEMPOTENCY_TABLE=stripe_memory # Database table for storing idempotency events
+
+# API request configuration
+STRIPE_TIMEOUT=60 # Timeout for API requests (in seconds)
+STRIPE_WEBHOOK_RETRIES=3 # Maximum number of retries for failed webhook events
+
+# Stripe API endpoint
+STRIPE_API_URL=https://api.stripe.com
 ```
 
 ### Configuration Structure
@@ -93,8 +120,16 @@ return [
     'secret_key'      => getenv('STRIPE_SECRET_KEY') ?: '',
     'publishable_key' => getenv('STRIPE_PUBLISHABLE_KEY') ?: '',
     'webhook_secret'  => getenv('STRIPE_WEBHOOK_SECRET') ?: '',
+    'test_key'        => getenv('STRIPE_TEST_KEY') ?: '',
     'api_version'     => getenv('STRIPE_API_VERSION') ?: '2025-04-30',
     'currency'        => getenv('STRIPE_CURRENCY') ?: 'usd',
+    'currency_limit'  => (int)(getenv('STRIPE_CURRENCY_LIMIT') ?: 100000),
+    'webhook_tolerance' => (int)(getenv('STRIPE_WEBHOOK_TOLERANCE') ?: 20),
+    'webhook_default_ttl' => (int)(getenv('STRIPE_WEBHOOK_DEFAULT_TTL') ?: 172800),
+    'idempotency_table' => getenv('STRIPE_IDEMPOTENCY_TABLE') ?: 'stripe_memory',
+    'timeout'         => (int)(getenv('STRIPE_TIMEOUT') ?: 60),
+    'webhook_retries' => (int)(getenv('STRIPE_WEBHOOK_RETRIES') ?: 3),
+    'api_url'         => getenv('STRIPE_API_URL') ?: 'https://api.stripe.com',
 ];
 ```
 
@@ -181,6 +216,27 @@ Key Types:
   webhook                      # STRIPE_WEBHOOK_SECRET
 ```
 
+### Environment-Specific Key Management
+
+The `--stage` flag allows you to manage keys for specific environments (`dev`, `prod`, `test`).
+
+#### Example
+
+```bash
+# Set keys for the test environment
+php vendor/bin/key-helper --stage=test set
+
+# Validate keys for the production environment
+php vendor/bin/key-helper --stage=prod validate
+
+# Generate a new key for the dev environment
+php vendor/bin/key-helper --stage=dev generate
+```
+
+The `.env.<stage>` file will be updated or validated based on the specified stage.
+
+**Default behavior without stage flag**: Uses `.env.dev` file
+
 ### Generate New Keys
 
 #### Generate Default App Key
@@ -239,9 +295,39 @@ php vendor/bin/key-helper validate
 # ✅ STRIPE_API_VERSION: VALID
 ```
 
+#### Validate Keys for a Specific Environment
+```bash
+# Validate keys for the test environment
+php vendor/bin/key-helper --stage=test validate
+```
+
 ## Webhook Handling
 
 This package provides a robust webhook handling system that securely processes Stripe events while preventing duplicate processing.
+
+### Environment-Aware Storage
+
+The package automatically selects the appropriate storage backend for webhook idempotency based on your `APP_ENV` environment variable:
+
+- **Development** (`dev`, default): **InMemoryStore** - Fast, no persistence needed for development
+- **Testing** (`test`, `testing`): **SQLiteStore** - Persistent but lightweight SQLite database for testing
+- **Production** (`prod`, `production`): **MySQLStore** - Robust, scalable MySQL database storage
+
+```env
+# Set your environment in .env file
+APP_ENV=dev      # Uses InMemoryStore
+APP_ENV=test     # Uses SQLiteStore  
+APP_ENV=prod     # Uses MySQLStore (requires database configuration)
+```
+
+### Production Mode Features
+
+In production mode (`APP_ENV=prod`), the webhook system provides additional robustness:
+
+- **Automatic Retries**: Retries transient errors (rate limits, API connection issues) with exponential backoff
+- **MySQL Storage**: Persistent storage for webhook idempotency across server restarts
+- **Enhanced Logging**: Detailed error logging and retry attempts
+- **Timeout Handling**: Process forking with timeout enforcement (Linux/Unix only)
 
 ### Setting Up Webhooks
 
@@ -310,57 +396,68 @@ This package provides a robust webhook handling system that securely processes S
    }
    ```
 
-### WebhookController Features
+### Error Handling & Retry Logic
 
-The `WebhookController` class provides a clean interface for handling Stripe webhooks:
-
-- **Secure Signature Verification**: Uses Stripe's cryptographic signature verification
-- **Idempotency Management**: Prevents duplicate processing of the same event
-- **Error Handling**: Comprehensive error handling for various Stripe exceptions
-- **Flexible Event Processing**: Pass your own callback to handle specific event types
+The webhook controller implements intelligent error handling based on the environment:
 
 ```php
-// Handle a webhook event with custom callback
-$webhookController->handle($payload, $sigHeader, function($eventData) {
-    // Your custom event handling logic
-    return ['status' => 'processed'];
-});
+// Production mode (APP_ENV=prod):
+// - Retries: Rate limits, API connection errors, server errors (5xx)
+// - No Retry: Card errors, invalid requests, authentication errors
+// - Uses exponential backoff: 60s, 120s, 180s
 
-// Check if an event has already been processed
-$isProcessed = $webhookController->isEventProcessed('evt_123456');
-
-// Clean up expired events
-$webhookController->cleanupExpiredEvents();
+// Development mode (APP_ENV=dev):
+// - No retries for any errors (fail fast for debugging)
+// - Immediate error reporting
 ```
 
-## Idempotency Management
+### Storage Implementation Details
 
-Stripe webhooks might be sent multiple times for the same event (due to retries or network issues). The package includes an idempotency system that ensures each event is processed exactly once.
+#### InMemoryStore (Development)
+- Pure PHP array storage
+- No persistence between requests
+- Automatic TTL-based cleanup
+- Zero configuration required
 
-### MemoryIdempotencyStore
+#### SQLiteStore (Testing)
+- Lightweight file-based database
+- Persists across requests
+- Creates database file automatically
+- Default location: system temp directory
 
-The `MemoryIdempotencyStore` is a database-backed system that:
+#### MySQLStore (Production)
+- Full database persistence
+- Requires `QueryBuilder` and `Connection`
+- Uses configurable table name (`idempotency_store`)
+- Supports clustering and high availability
 
-- **Tracks Processed Events**: Records which webhook events have been processed
-- **Prevents Duplicates**: Automatically rejects duplicate event IDs
-- **Time-Based Expiration**: Supports automatic cleanup of old events
-- **Data Storage**: Can store additional data associated with events
+### Database Schema
 
-This component is managed automatically by the WebhookController and WebhookMiddleware, requiring no direct interaction in most use cases.
-
-### Database Setup
-
-The idempotency store requires a database table with the following structure:
+For production MySQL storage, the following table is required:
 
 ```sql
 CREATE TABLE idempotency_store (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    event_id VARCHAR(255) NOT NULL UNIQUE,
+    event_id VARCHAR(255) UNIQUE NOT NULL,
     processed_at DATETIME NOT NULL,
     expiry DATETIME NULL,
     data JSON NULL,
-    UNIQUE INDEX idx_event_id (event_id)
+    INDEX idx_event_id (event_id),
+    INDEX idx_expiry (expiry)
 );
+```
+```
+
+### Configuring Webhook Processing
+
+You can customize webhook processing behavior through environment variables:
+
+```env
+# Webhook processing configuration
+STRIPE_TIMEOUT=60                    # Timeout for webhook processing (seconds)
+STRIPE_WEBHOOK_RETRIES=3             # Maximum retry attempts (production only)
+STRIPE_WEBHOOK_TOLERANCE=20          # Signature timestamp tolerance (seconds)
+STRIPE_WEBHOOK_DEFAULT_TTL=172800    # Event storage TTL (48 hours in seconds)
 ```
 
 ### Configuring Expiration
