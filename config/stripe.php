@@ -6,14 +6,17 @@ return [
     // The secret key for authenticating API requests to Stripe.
     'secret_key'      => $_ENV['STRIPE_SECRET_KEY'] ?? '',
 
+    // The test key for Stripe's test environment.
+    'test_key'       => $_ENV['STRIPE_TEST_KEY'] ?? '',
+
     // The publishable key for client-side Stripe integrations.
     'publishable_key' => $_ENV['STRIPE_PUBLISHABLE_KEY'] ?? '',
 
     // The secret used to verify the authenticity of Stripe webhooks.
     'webhook_secret'  => $_ENV['STRIPE_WEBHOOK_SECRET'] ?? '',
 
-    // The test key for Stripe's test environment.
-    'test_key'       => $_ENV['STRIPE_TEST_KEY'] ?? '',
+    // The secret used to verify the authenticity of Stripe webhooks.
+    'webhook_secret_test'  => $_ENV['STRIPE_WEBHOOK_SECRET_TEST'] ?? '',
 
     // The API version to use for Stripe requests.
     'api_version'     => $_ENV['STRIPE_API_VERSION'] ?? '2025-04-30',

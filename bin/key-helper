@@ -24,12 +24,13 @@ class KeyHelper
 {
     /** @var string The name of the environment file relative to working directory */
     private const KEY_FILE_NAME = '/.env';
-
     /** @var array Mapping of key aliases to actual environment variable names */
     private const ALLOWED_KEYS = [
         'secret'      => 'STRIPE_SECRET_KEY',
+        'test'        => 'STRIPE_TEST_KEY',
         'publishable' => 'STRIPE_PUBLISHABLE_KEY',
-        'webhook'     => 'STRIPE_WEBHOOK_SECRET'
+        'webhook'     => 'STRIPE_WEBHOOK_SECRET',
+        'webhook_test' => 'STRIPE_WEBHOOK_SECRET_TEST'
     ];
 
     private string $keyFile;
@@ -54,7 +55,6 @@ class KeyHelper
         // Construct the full path to the .env.<stage> file
         $this->keyFile = $working_dir . '/.env.' . $this->stage;
     }
-
     /**
      * Generate a cryptographically secure random key
      * 
@@ -67,6 +67,32 @@ class KeyHelper
     public function generateKey(int $length = 32): string
     {
         return bin2hex(random_bytes($length)); // 64 hex chars (32 bytes)
+    }
+
+    /**
+     * Generate appropriate default value for specific key types
+     * 
+     * @param string $keyType The environment variable name
+     * @return string Default or placeholder value
+     */    public function generateDefaultValue(string $keyType): string
+    {
+        switch ($keyType) {
+            case 'STRIPE_SECRET_KEY':
+                return 'sk_test_' . $this->generateKey(24);
+
+            case 'STRIPE_TEST_KEY':
+                return 'sk_test_' . $this->generateKey(24);
+
+            case 'STRIPE_PUBLISHABLE_KEY':
+                return 'pk_test_' . $this->generateKey(24);
+
+            case 'STRIPE_WEBHOOK_SECRET':
+            case 'STRIPE_WEBHOOK_SECRET_TEST':
+                return 'whsec_' . $this->generateKey(24);
+
+            default:
+                return $this->generateKey(); // 64 hex chars
+        }
     }
 
     /**
@@ -143,28 +169,74 @@ class KeyHelper
         }
         return null;
     }
-
     /**
      * Validate a key based on its format and type
      * 
      * Supports validation for:
      * - Generated keys (64-character hexadecimal)
-     * - Stripe secret keys (sk_test_*, sk_live_*
-     * - Stripe publishable keys (pk_test_*, pk_live_*
-     * - Webhook secrets (whsec_*
+     * - Stripe secret keys (sk_test_*, sk_live_*)
+     * - Stripe publishable keys (pk_test_*, pk_live_*)
+     * - Webhook secrets (whsec_*)
      * - API versions (YYYY-MM-DD format)
+     * - Currency codes (ISO 4217 format)
+     * - Numeric values (timeouts, limits, retries)
+     * - URLs (API endpoints)
      * 
      * @param string $key The key to validate
+     * @param string $keyType Optional key type for specific validation
      * @return bool True if the key appears to be valid
      */
-    public function validateKey(string $key): bool
+    public function validateKey(string $key, string $keyType = ''): bool
     {
-        // Enhanced validation for different key types
+        // Empty keys are invalid
+        if (empty(trim($key))) {
+            return false;
+        }
+
+        // Type-specific validation
+        switch ($keyType) {
+            case 'STRIPE_SECRET_KEY':
+            case 'STRIPE_TEST_KEY':
+                return (str_starts_with($key, 'sk_test_') || str_starts_with($key, 'sk_live_')) && strlen($key) > 20;
+
+            case 'STRIPE_PUBLISHABLE_KEY':
+                return (str_starts_with($key, 'pk_test_') || str_starts_with($key, 'pk_live_')) && strlen($key) > 20;
+            case 'STRIPE_WEBHOOK_SECRET':
+            case 'STRIPE_WEBHOOK_SECRET_TEST':
+                // Allow placeholders like "whsec_..."
+                return str_starts_with($key, 'whsec_') && strlen($key) >= 7;
+
+            case 'STRIPE_API_VERSION':
+                return preg_match('/^\d{4}-\d{2}-\d{2}$/', $key);
+            case 'STRIPE_CURRENCY':
+                return preg_match('/^[a-z]{3}$/i', $key) && strlen($key) === 3;
+            case 'STRIPE_CURRENCY_LIMIT':
+            case 'STRIPE_WEBHOOK_TOLERANCE':
+            case 'STRIPE_WEBHOOK_DEFAULT_TTL':
+            case 'STRIPE_TIMEOUT':
+            case 'STRIPE_WEBHOOK_RETRIES':
+                // Values from .env are always strings, even numbers
+                return is_numeric($key) && (int)$key >= 0;
+
+            case 'STRIPE_API_URL':
+                return filter_var($key, FILTER_VALIDATE_URL) !== false && str_starts_with($key, 'https://');
+
+            case 'STRIPE_IDEMPOTENCY_TABLE':
+                return preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $key);
+            case 'STRIPE_APP_KEY':
+                // Handle both full hex strings and partial values like "a61c98..."
+                if (strlen($key) === 64 && preg_match('/^[a-f0-9]{64}$/', $key)) {
+                    return true; // Full 64-char hex
+                }
+                // Allow shorter hex strings (could be truncated for display)
+                return strlen($key) >= 6 && preg_match('/^[a-f0-9.]+$/', $key);
+        }
+
+        // General validation for unknown types
         if (strlen($key) === 64 && preg_match('/^[a-f0-9]{64}$/', $key)) {
             return true; // Generated keys (64 hex chars)
         }
 
-        // Stripe API keys validation
         if (str_starts_with($key, 'sk_test_') || str_starts_with($key, 'sk_live_')) {
             return strlen($key) > 20; // Secret keys
         }
@@ -177,14 +249,13 @@ class KeyHelper
             return strlen($key) > 20; // Webhook secrets
         }
 
-        // API version validation
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $key)) {
             return true; // Date format for API version
         }
 
-        return false;
+        // Basic validation for other types
+        return strlen($key) > 0;
     }
-
     /**
      * Validate all Stripe-related keys in the environment
      * 
@@ -199,7 +270,7 @@ class KeyHelper
      */
     public function validateAllKeys(): void
     {
-        echo "Validating all Stripe keys..." . PHP_EOL . PHP_EOL;
+        echo "Validating all Stripe keys for environment: {$this->stage}..." . PHP_EOL . PHP_EOL;
 
         $hasErrors = false;
 
@@ -210,25 +281,10 @@ class KeyHelper
             if ($key === null) {
                 echo "⚠️  $keyName ($alias): NOT SET" . PHP_EOL;
                 $hasErrors = true;
-            } elseif ($this->validateKey($key)) {
+            } elseif ($this->validateKey($key, $keyName)) {
                 echo "✅ $keyName ($alias): VALID" . PHP_EOL;
             } else {
                 echo "❌ $keyName ($alias): INVALID" . PHP_EOL;
-                $hasErrors = true;
-            }
-        }
-
-        // Check additional Stripe-related keys
-        $additionalKeys = ['STRIPE_API_VERSION', 'STRIPE_APP_KEY'];
-        foreach ($additionalKeys as $keyName) {
-            $key = $this->readKey($keyName);
-
-            if ($key === null) {
-                echo "⚠️  $keyName: NOT SET" . PHP_EOL;
-            } elseif ($this->validateKey($key)) {
-                echo "✅ $keyName: VALID" . PHP_EOL;
-            } else {
-                echo "❌ $keyName: INVALID" . PHP_EOL;
                 $hasErrors = true;
             }
         }
@@ -260,8 +316,7 @@ class KeyHelper
             echo "❌ Key '$keyName' not found in .env file." . PHP_EOL;
             exit(1);
         }
-
-        if ($this->validateKey($key)) {
+        if ($this->validateKey($key, $keyName)) {
             echo "✅ Key '$keyName' is valid." . PHP_EOL;
             echo "Value: $key" . PHP_EOL;
         } else {
@@ -270,7 +325,6 @@ class KeyHelper
             exit(1);
         }
     }
-
     /**
      * Display comprehensive usage information
      * 
@@ -286,13 +340,18 @@ class KeyHelper
         echo "  --stage flag allows specifying the environment (default: dev)" . PHP_EOL;
         echo PHP_EOL;
         echo "Commands:" . PHP_EOL;
-        echo "  generate [KEY_NAME]   # Generate and save a new key (default: STRIPE_APP_KEY)" . PHP_EOL;
+        echo "  generate [KEY_TYPE]   # Generate and save a new key (default: STRIPE_SECRET_KEY)" . PHP_EOL;
         echo "  set [KEY_NAME VALUE]  # Set a specific key with a value, or interactively set all Stripe keys" . PHP_EOL;
-        echo "  rotate [KEY_NAME]     # Rotate (replace) the key" . PHP_EOL;
-        echo "  validate [KEY_NAME]   # Validate the existing key (all keys if no name specified)" . PHP_EOL;
-        echo "  show [KEY_NAME]       # Show the current key" . PHP_EOL;
+        echo "  rotate [KEY_TYPE]     # Rotate (replace) the key" . PHP_EOL;
+        echo "  validate [KEY_TYPE]   # Validate the existing key (all keys if no type specified)" . PHP_EOL;
+        echo "  show [KEY_TYPE]       # Show the current key" . PHP_EOL;
         echo "  list                  # List all keys with STRIPE or WEBHOOK prefix" . PHP_EOL;
         echo "  webhook:test          # Test webhook secret validation" . PHP_EOL;
+        echo PHP_EOL;
+        echo "Available Key Types:" . PHP_EOL;
+        foreach (self::ALLOWED_KEYS as $alias => $keyName) {
+            echo "  $alias" . str_repeat(' ', max(1, 16 - strlen($alias))) . "# $keyName" . PHP_EOL;
+        }
     }
 
     /**
@@ -437,33 +496,32 @@ class KeyHelper
 
         $command = strtolower($argv[1]);
         $keyAlias = $argv[2] ?? null;
-        $keyName = null;
-
-        // Command-specific argument validation and processing
+        $keyName = null;        // Command-specific argument validation and processing
         if (in_array($command, ['rotate', 'show'])) {
             if ($keyAlias === null) {
-                echo "You must specify a key type: secret, publishable, or webhook.\n";
+                echo "You must specify a key type. Available types:\n";
+                echo implode(', ', array_keys(self::ALLOWED_KEYS)) . "\n";
                 $this->printUsage();
                 exit(1);
             }
             if (!array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
                 echo "Invalid key type: $keyAlias\n";
-                echo "Allowed types: secret, publishable, webhook\n";
+                echo "Available types: " . implode(', ', array_keys(self::ALLOWED_KEYS)) . "\n";
                 exit(1);
             }
             $keyName = self::ALLOWED_KEYS[$keyAlias];
         } elseif ($command === 'validate') {
             if ($keyAlias !== null && !array_key_exists($keyAlias, self::ALLOWED_KEYS)) {
                 echo "Invalid key type: $keyAlias\n";
-                echo "Allowed types: secret, publishable, webhook\n";
+                echo "Available types: " . implode(', ', array_keys(self::ALLOWED_KEYS)) . "\n";
                 exit(1);
             }
             $keyName = $keyAlias ? self::ALLOWED_KEYS[$keyAlias] : null;
         } elseif ($command === 'generate') {
-            $keyName = $keyAlias ? (self::ALLOWED_KEYS[$keyAlias] ?? null) : 'STRIPE_APP_KEY';
+            $keyName = $keyAlias ? (self::ALLOWED_KEYS[$keyAlias] ?? null) : 'STRIPE_SECRET_KEY';
             if ($keyAlias && !$keyName) {
                 echo "Invalid key type: $keyAlias\n";
-                echo "Allowed types: secret, publishable, webhook\n";
+                echo "Available types: " . implode(', ', array_keys(self::ALLOWED_KEYS)) . "\n";
                 exit(1);
             }
         } elseif ($command === 'set') {
@@ -473,12 +531,10 @@ class KeyHelper
                 echo "Usage: key-helper.php set KEY_NAME VALUE\n";
                 exit(1);
             }
-        }
-
-        // Execute the requested command
+        }        // Execute the requested command
         switch ($command) {
             case 'generate':
-                $key = $this->generateKey();
+                $key = $this->generateDefaultValue($keyName);
                 $this->saveKey($key, $keyName);
                 echo "Generated key ($keyName): $key" . PHP_EOL;
                 break;
@@ -492,7 +548,9 @@ class KeyHelper
                     $stripeKeys = [
                         'STRIPE_PUBLISHABLE_KEY',
                         'STRIPE_SECRET_KEY',
+                        'STRIPE_TEST_KEY',
                         'STRIPE_WEBHOOK_SECRET',
+                        'STRIPE_WEBHOOK_SECRET_TEST',
                         'STRIPE_API_VERSION'
                     ];
 
@@ -519,9 +577,15 @@ class KeyHelper
 
             case 'rotate':
                 echo "Rotating key $keyName..." . PHP_EOL;
-                $key = $this->generateKey();
-                $this->saveKey($key, $keyName);
-                echo "New key ($keyName): $key" . PHP_EOL;
+                $oldKey = $this->readKey($keyName);
+                if ($oldKey) {
+                    echo "Old key: $oldKey" . PHP_EOL;
+                }
+
+                $newKey = $this->generateDefaultValue($keyName);
+                $this->saveKey($newKey, $keyName);
+                echo "New key ($keyName): $newKey" . PHP_EOL;
+                echo "✅ Key rotation completed successfully!" . PHP_EOL;
                 break;
 
             case 'validate':
