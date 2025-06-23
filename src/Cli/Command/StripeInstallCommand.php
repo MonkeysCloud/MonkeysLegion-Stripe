@@ -63,6 +63,9 @@ final class StripeInstallCommand extends Command
         // 2) Ensure .env contains Stripe keys
         $this->ensureEnvKeys($projectRoot);
 
+        // 3) Patch config/app.php: expose Stripe routes as public paths
+        $this->exposeStripePaths($projectRoot);
+
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
         return self::SUCCESS;
     }
@@ -132,6 +135,56 @@ final class StripeInstallCommand extends Command
         $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing));
     }
 
+
+    /**
+     * Add Stripe endpoint patterns to AuthMiddleware publicPaths in config/app.php.
+     */
+    private function exposeStripePaths(string $projectRoot): void
+    {
+        $file = "{$projectRoot}/config/app.php";
+        if (!is_file($file)) {
+            $this->warn('config/app.php not found; skipping public path injection.');
+            return;
+        }
+
+        $contents = file_get_contents($file);
+
+        // Match the whole AuthMiddleware binding (may span multiple lines)
+        $pattern = '/AuthMiddleware::class\s*=>\s*fn\([^)]*\)\s*=>\s*new\s+AuthMiddleware\([^)]*\)/s';
+
+        if (!preg_match($pattern, $contents, $m, PREG_OFFSET_CAPTURE)) {
+            $this->warn('AuthMiddleware binding not found; manual configuration may be required.');
+            return;
+        }
+
+        [$binding, $pos] = $m[0];            // $binding === string, $pos === int
+
+        // Bail out early if we already patched this file
+        if (str_contains($binding, '/stripe/*')) {
+            $this->info('Stripe paths are already exposed; nothing to do.');
+            return;
+        }
+
+        // Build the public-paths array
+        $public = var_export([
+            '/',
+            '/stripe/*',
+            '/docs',
+            '/docs/*',
+            '/success',
+            '/cancel',
+        ], true);
+
+        // Insert before the *last* closing parenthesis of new AuthMiddleware(...)
+        $patched = preg_replace('/\)(?=[^()]*$)/', ", {$public})", $binding, 1);
+
+        // The cast silences the static-analysis warning
+        $newContents = substr_replace($contents, $patched, (int) $pos, strlen($binding));
+
+        file_put_contents($file, $newContents);
+        $this->info('✓ Exposed Stripe and docs paths in AuthMiddleware publicPaths.');
+    }
+
     /**
      * Recursively copy a directory using native PHP iterators.
      */
@@ -187,5 +240,13 @@ final class StripeInstallCommand extends Command
             return $default;
         }
         return in_array(strtolower($answer), ['y', 'yes'], true);
+    }
+
+    /**
+     * Output a warning message to the console.
+     */
+    private function warn(string $message): void
+    {
+        $this->line('<comment>' . $message . '</comment>');
     }
 }
