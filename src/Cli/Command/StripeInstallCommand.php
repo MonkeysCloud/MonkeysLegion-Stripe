@@ -60,10 +60,7 @@ final class StripeInstallCommand extends Command
             $this->info('✓ Published file ' . str_replace($projectRoot . '/', '', $to));
         }
 
-        // 2) Ensure ServiceProvider is registered
-        $this->ensureServiceProvider($projectRoot);
-
-        // 3) Ensure .env contains Stripe keys
+        // 2) Ensure .env contains Stripe keys
         $this->ensureEnvKeys($projectRoot);
 
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
@@ -177,29 +174,6 @@ final class StripeInstallCommand extends Command
             $this->line('↷ Skipped ' . str_replace($projectRoot . '/', '', $to));
         }
         return $overwrite;
-    }
-
-    /**
-     * Ensure the StripeServiceProvider is registered in config/app.php.
-     * This is necessary for the package to function correctly.
-     */
-    private function ensureServiceProvider(string $projectRoot): void
-    {
-        $appConfig = "{$projectRoot}/config/app.php";
-        if (!file_exists($appConfig)) {
-            return;
-        }
-
-        $config   = file_get_contents($appConfig);
-        $provider = 'MonkeysLegion\\\\Stripe\\\\Provider\\\\StripeServiceProvider::class';
-
-        if (!str_contains($config, $provider)) {
-            $updated = preg_replace('/return \[/','return [\n        ' . $provider . ',', $config, 1);
-            if ($updated !== null) {
-                file_put_contents($appConfig, $updated);
-                $this->info('✓ Added StripeServiceProvider to config/app.php');
-            }
-        }
     }
 
     /**
