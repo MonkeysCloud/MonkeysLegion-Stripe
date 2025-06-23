@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace MonkeysLegion\Stripe\Command;
+namespace MonkeysLegion\Stripe\Cli\Command;
 
 use FilesystemIterator;
 use MonkeysLegion\Cli\Console\Attributes\Command as CommandAttr;
@@ -22,7 +22,7 @@ final class StripeInstallCommand extends Command
     public function handle(): int
     {
         $projectRoot = base_path();
-        $stubDir     = __DIR__ . '/../stubs';
+        $stubDir = __DIR__ . '/../../../stubs';
 
         // 1) Copy scaffolding files
         $map = [
