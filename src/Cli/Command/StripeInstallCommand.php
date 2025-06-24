@@ -149,10 +149,10 @@ final class StripeInstallCommand extends Command
             return;
         }
 
-        $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
-        $toAdd = ['/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
+        $lines  = file($mlcFile, FILE_IGNORE_NEW_LINES);
+        $toAdd  = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
 
-        // 1) Find the “auth:” section
+        // 1) Find the “auth:” line
         $authLine = null;
         foreach ($lines as $idx => $line) {
             if (preg_match('/^\s*auth:\s*$/', $line)) {
@@ -165,61 +165,72 @@ final class StripeInstallCommand extends Command
             return;
         }
 
-        // 2) Find existing public_paths: and its items
-        $publicKey     = null;
-        $existing      = [];
-        $indent        = '';
-        $listStart     = null;
-        $listEnd       = null;
-
+        // 2) Determine the indent used for auth's children (e.g. "    ")
+        $childIndent = '';
         for ($i = $authLine + 1, $n = count($lines); $i < $n; $i++) {
-            $line = $lines[$i];
-            // if we hit a new top-level key (same indent as auth), stop scanning
-            if (preg_match('/^(\S.*):\s*$/', $line, $m) && strlen($m[1]) === strlen('auth') /* crude indent check */) {
-                break;
-            }
-            // detect public_paths:
-            if ($publicKey === null && preg_match('/^(\s*)public_paths:\s*$/', $line, $m)) {
-                $publicKey = $i;
-                $indent    = $m[1];
+            if (trim($lines[$i]) === '') {
                 continue;
             }
-            // if we're in the list block, collect items
-            if ($publicKey !== null && preg_match('/^' . preg_quote($indent . '  -', '/') . '\s*(.+)$/', $line, $m)) {
+            if (preg_match('/^(\s+)\S/', $lines[$i], $m)) {
+                $childIndent = $m[1];
+                break;
+            }
+        }
+        // fallback to 4 spaces if we couldn't detect
+        if ($childIndent === '') {
+            $childIndent = '    ';
+        }
+
+        // 3) Scan for existing `public_paths:` block
+        $publicKey = null;
+        $existing  = [];
+        $listEnd   = null;
+        for ($i = $authLine + 1, $n = count($lines); $i < $n; $i++) {
+            $line = $lines[$i];
+            // stop at next top-level key
+            if (preg_match('/^(\S.*):\s*$/', $line) && strlen($line) - strlen(ltrim($line)) === 0) {
+                break;
+            }
+            // find public_paths:
+            if ($publicKey === null && preg_match('/^' . preg_quote($childIndent, '/') . 'public_paths:\s*$/', $line)) {
+                $publicKey = $i;
+                continue;
+            }
+            // collect list items under it
+            if ($publicKey !== null && preg_match('/^' . preg_quote($childIndent . '  -', '/') . '\s*(.+)$/', $line, $m)) {
                 $existing[] = $m[1];
-                $listEnd    = $i;
+                $listEnd   = $i;
             } elseif ($publicKey !== null && $listEnd !== null) {
-                // we've left the list
+                // leaving the list block
                 break;
             }
         }
 
-        // 3) Merge in the six paths
+        // 4) Merge in your six paths
         $merged = array_values(array_unique(array_merge($existing, $toAdd)));
 
-        // 4) Build the new block
+        // 5) Build the replacement block
         $block = [];
-        if ($publicKey === null) {
-            // insert public_paths: after auth:
-            $insertAt = $authLine + 1;
-            $block[]  = $indent . 'public_paths:';
-        } else {
-            // overwrite from publicKey to listEnd
+        // If there was an old block, remove it
+        if ($publicKey !== null) {
+            $end = $listEnd ?? $publicKey;
+            array_splice($lines, $publicKey, $end - $publicKey + 1);
             $insertAt = $publicKey;
-            // if there was no list, we still overwrite only the key line
-            $endReplace = $listEnd ?? $publicKey;
-            // remove old lines
-            array_splice($lines, $publicKey, $endReplace - $publicKey + 1);
-        }
-        // now append the merged items under that key
-        foreach ($merged as $path) {
-            $block[] = $indent . '  - ' . $path;
+        } else {
+            // Insert right after auth:
+            $insertAt = $authLine + 1;
         }
 
-        // 5) Splice the new block into $lines
+        // Add the key and its items
+        $block[] = $childIndent . 'public_paths:';
+        foreach ($merged as $path) {
+            $block[] = $childIndent . '  - ' . $path;
+        }
+
+        // 6) Splice into the file
         array_splice($lines, $insertAt, 0, $block);
 
-        // 6) Write back
+        // 7) Write it back
         file_put_contents($mlcFile, implode("\n", $lines) . "\n");
         $this->info('✓ Merged Stripe & docs paths into config/app.mlc › auth.public_paths.');
     }
