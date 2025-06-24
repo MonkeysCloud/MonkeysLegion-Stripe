@@ -148,72 +148,94 @@ final class StripeInstallCommand extends Command
         }
         $contents = file_get_contents($file);
 
-        // 1) Find the entire new AuthMiddleware(...) call
-        $pattern = '/
-        (new\s+AuthMiddleware\s*      # “new AuthMiddleware”
-         \(
-           (.*?)                      #   capture all arguments
-         \)
-        )
-    /sx';
-
-        if (!preg_match($pattern, $contents, $m, PREG_OFFSET_CAPTURE)) {
+        // 1) Locate “new AuthMiddleware(”
+        $needle   = 'new AuthMiddleware(';
+        $basePos  = strpos($contents, $needle);
+        if ($basePos === false) {
             $this->warn('AuthMiddleware binding not found; manual configuration may be required.');
             return;
         }
+        // position of the opening parenthesis
+        $openPos  = $basePos + strlen($needle) - 1;
 
-        [$fullCall, $offset] = $m[1];
-        $insideArgs         = $m[2][0];
+        // 2) Walk the string to find its matching “)”
+        $depth = 1;
+        $len   = strlen($contents);
+        $i     = $openPos;
+        while ($i < $len && $depth > 0) {
+            $i++;
+            if ($contents[$i] === '(') {
+                $depth++;
+            } elseif ($contents[$i] === ')') {
+                $depth--;
+            }
+        }
+        // if we exited without closing all, bail
+        if ($depth !== 0) {
+            $this->warn('Could not find end of AuthMiddleware constructor.');
+            return;
+        }
+        $closePos = $i;
 
-        // 2) Split out arguments (simple: split on commas not inside brackets)
-        $args = preg_split('/,(?![^[]*\])/', $insideArgs);
+        // 3) Extract the entire constructor call text
+        $fullCall = substr($contents, $basePos, $closePos - $basePos + 1);
 
-        // Trim whitespace
-        $args = array_map('trim', $args);
+        // 4) Check for idempotency
+        if (str_contains($fullCall, '/stripe/*')) {
+            $this->info('Stripe paths are already exposed; nothing to do.');
+            return;
+        }
 
-        // 3) Determine existing public-paths array
-        //    It’ll be the 4th argument if present and starts with “[”
-        $existingItems = [];
-        if (isset($args[3]) && str_starts_with($args[3], '[')) {
-            // strip brackets and whitespace
-            $body = trim($args[3], "[] \t\n\r");
-            if ($body !== '') {
-                // split on commas
-                foreach (preg_split('/,(?![^\'"]*[\'"])/', $body) as $item) {
-                    $existingItems[] = trim($item, " \t\n\r'\"");
+        // 5) Build your short-array literal
+        $publicPathsCode = <<<'PHP'
+[
+    '/',
+    '/stripe/*',
+    '/docs',
+    '/docs/*',
+    '/success',
+    '/cancel',
+]
+PHP;
+
+        // 6) Insert the new fourth argument just before the outer “)”
+        //    First split arguments by finding the position of the 3rd comma at depth 1
+        $argsText = substr($fullCall, strlen($needle), -1); // inner of ( … )
+        $depth    = 0;
+        $commas   = 0;
+        $splitPos = null;
+        for ($j = 0, $n = strlen($argsText); $j < $n; $j++) {
+            $ch = $argsText[$j];
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth--;
+            } elseif ($ch === ',' && $depth === 0) {
+                $commas++;
+                if ($commas === 3) {
+                    $splitPos = $j;
+                    break;
                 }
             }
         }
-
-        // 4) Define the six paths to ensure
-        $toAdd = [
-            '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'
-        ];
-
-        // 5) Merge & preserve order + remove duplicates
-        $merged = array_values(array_unique(array_merge($existingItems, $toAdd)));
-
-        // 6) Build the new short-array literal
-        $publicPathsCode = "[\n"
-            . "    '" . implode("',\n    '", $merged) . "',\n"
-            . "]";
-
-        // 7) Reconstruct the argument list:
-        //    - replace the 4th arg if existed, otherwise append it
-        if (isset($args[3]) && str_starts_with($args[3], '[')) {
-            $args[3] = $publicPathsCode;
+        // If there are already ≥ 3 commas at depth 0, we split there
+        if ($splitPos !== null) {
+            $before = substr($argsText, 0, $splitPos);
+            $after  = substr($argsText, $splitPos + 1);
+            $newArgs = trim($before)
+                . ', ' . $publicPathsCode
+                . ', ' . trim($after);
         } else {
-            $args[] = $publicPathsCode;
+            // otherwise just append it
+            $newArgs = trim($argsText) . ', ' . $publicPathsCode;
         }
 
-        // 8) Re-join arguments and rebuild the call
-        $newCall = 'new AuthMiddleware(' . implode(', ', $args) . ')';
-
-        // 9) Splice back into the file
+        // 7) Rebuild the constructor call
+        $newCall     = $needle . $newArgs . ')';
         $newContents = substr_replace(
             $contents,
             $newCall,
-            (int)$offset,
+            $basePos,
             strlen($fullCall)
         );
 
