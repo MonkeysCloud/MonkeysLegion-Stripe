@@ -150,7 +150,7 @@ final class StripeInstallCommand extends Command
         }
 
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
-        $toAdd = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
+        $toAdd = ['/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
 
         // 1) Find the “auth:” section
         $authLine = null;
