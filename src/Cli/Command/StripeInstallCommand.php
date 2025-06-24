@@ -146,22 +146,22 @@ final class StripeInstallCommand extends Command
             $this->warn('config/app.php not found; skipping public path injection.');
             return;
         }
+
         $contents = file_get_contents($file);
 
-        // 1) Locate “new AuthMiddleware(”
-        $needle   = 'new AuthMiddleware(';
-        $basePos  = strpos($contents, $needle);
+        // 1) Locate the start of “new AuthMiddleware(”
+        $needle    = 'new AuthMiddleware(';
+        $basePos   = strpos($contents, $needle);
         if ($basePos === false) {
             $this->warn('AuthMiddleware binding not found; manual configuration may be required.');
             return;
         }
-        // position of the opening parenthesis
-        $openPos  = $basePos + strlen($needle) - 1;
 
-        // 2) Walk the string to find its matching “)”
-        $depth = 1;
-        $len   = strlen($contents);
-        $i     = $openPos;
+        // 2) Find the matching “)” for that constructor call
+        $openPos   = $basePos + strlen($needle) - 1;
+        $depth     = 1;
+        $len       = strlen($contents);
+        $i         = $openPos;
         while ($i < $len && $depth > 0) {
             $i++;
             if ($contents[$i] === '(') {
@@ -170,68 +170,80 @@ final class StripeInstallCommand extends Command
                 $depth--;
             }
         }
-        // if we exited without closing all, bail
         if ($depth !== 0) {
             $this->warn('Could not find end of AuthMiddleware constructor.');
             return;
         }
         $closePos = $i;
 
-        // 3) Extract the entire constructor call text
+        // 3) Pull out the full constructor call
         $fullCall = substr($contents, $basePos, $closePos - $basePos + 1);
 
-        // 4) Check for idempotency
+        // If we already injected, bail
         if (str_contains($fullCall, '/stripe/*')) {
             $this->info('Stripe paths are already exposed; nothing to do.');
             return;
         }
 
-        // 5) Build your short-array literal
-        $publicPathsCode = <<<'PHP'
-[
-    '/',
-    '/stripe/*',
-    '/docs',
-    '/docs/*',
-    '/success',
-    '/cancel',
-]
-PHP;
+        // 4) Extract just the inside of the parentheses
+        $innerArgs = substr($fullCall, strlen($needle), -1);
 
-        // 6) Insert the new fourth argument just before the outer “)”
-        //    First split arguments by finding the position of the 3rd comma at depth 1
-        $argsText = substr($fullCall, strlen($needle), -1); // inner of ( … )
-        $depth    = 0;
-        $commas   = 0;
-        $splitPos = null;
-        for ($j = 0, $n = strlen($argsText); $j < $n; $j++) {
-            $ch = $argsText[$j];
-            if ($ch === '(') {
+        // 5) Split on commas at depth 0 to get the 4 args (or fewer)
+        $args = [];
+        $buf  = '';
+        $depth = 0;
+        for ($j = 0, $n = strlen($innerArgs); $j < $n; $j++) {
+            $ch = $innerArgs[$j];
+            if ($ch === '(' || $ch === '[') {
                 $depth++;
-            } elseif ($ch === ')') {
+            } elseif ($ch === ')' || $ch === ']') {
                 $depth--;
-            } elseif ($ch === ',' && $depth === 0) {
-                $commas++;
-                if ($commas === 3) {
-                    $splitPos = $j;
-                    break;
-                }
+            }
+
+            // top-level comma → split
+            if ($ch === ',' && $depth === 0) {
+                $args[] = trim($buf);
+                $buf = '';
+            } else {
+                $buf .= $ch;
             }
         }
-        // If there are already ≥ 3 commas at depth 0, we split there
-        if ($splitPos !== null) {
-            $before = substr($argsText, 0, $splitPos);
-            $after  = substr($argsText, $splitPos + 1);
-            $newArgs = trim($before)
-                . ', ' . $publicPathsCode
-                . ', ' . trim($after);
-        } else {
-            // otherwise just append it
-            $newArgs = trim($argsText) . ', ' . $publicPathsCode;
+        if (strlen(trim($buf))) {
+            $args[] = trim($buf);
         }
 
-        // 7) Rebuild the constructor call
-        $newCall     = $needle . $newArgs . ')';
+        // 6) Determine existing publicPaths (4th arg)
+        $existing = [];
+        if (isset($args[3]) && str_starts_with($args[3], '[')) {
+            // pull out all quoted strings in that array
+            preg_match_all("/'([^']*)'/", $args[3], $m);
+            $existing = $m[1];
+        }
+
+        // 7) Our six paths to ensure
+        $toAdd = [
+            '/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'
+        ];
+
+        // 8) Merge, preserve order, dedupe
+        $merged = array_values(array_unique(array_merge($existing, $toAdd)));
+
+        // 9) Build a fresh short-array literal
+        $newArray = "[\n"
+            . "    '" . implode("',\n    '", $merged) . "',\n"
+            . "]";
+
+        // 10) Replace or append the 4th argument
+        if (isset($args[3]) && str_starts_with($args[3], '[')) {
+            $args[3] = $newArray;
+        } else {
+            $args[] = $newArray;
+        }
+
+        // 11) Reconstruct the new constructor call
+        $newCall = $needle . implode(', ', $args) . ')';
+
+        // 12) Splice it back into the file
         $newContents = substr_replace(
             $contents,
             $newCall,
