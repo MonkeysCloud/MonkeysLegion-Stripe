@@ -146,43 +146,79 @@ final class StripeInstallCommand extends Command
             $this->warn('config/app.php not found; skipping public path injection.');
             return;
         }
-
         $contents = file_get_contents($file);
 
-        // Match the whole AuthMiddleware binding (may span multiple lines)
-        $pattern = '/AuthMiddleware::class\s*=>\s*fn\([^)]*\)\s*=>\s*new\s+AuthMiddleware\([^)]*\)/s';
+        // 1) Find the entire new AuthMiddleware(...) call
+        $pattern = '/
+        (new\s+AuthMiddleware\s*      # “new AuthMiddleware”
+         \(
+           (.*?)                      #   capture all arguments
+         \)
+        )
+    /sx';
 
         if (!preg_match($pattern, $contents, $m, PREG_OFFSET_CAPTURE)) {
             $this->warn('AuthMiddleware binding not found; manual configuration may be required.');
             return;
         }
 
-        [$binding, $pos] = $m[0];            // $binding === string, $pos === int
+        [$fullCall, $offset] = $m[1];
+        $insideArgs         = $m[2][0];
 
-        // Bail out early if we already patched this file
-        if (str_contains($binding, '/stripe/*')) {
-            $this->info('Stripe paths are already exposed; nothing to do.');
-            return;
+        // 2) Split out arguments (simple: split on commas not inside brackets)
+        $args = preg_split('/,(?![^[]*\])/', $insideArgs);
+
+        // Trim whitespace
+        $args = array_map('trim', $args);
+
+        // 3) Determine existing public-paths array
+        //    It’ll be the 4th argument if present and starts with “[”
+        $existingItems = [];
+        if (isset($args[3]) && str_starts_with($args[3], '[')) {
+            // strip brackets and whitespace
+            $body = trim($args[3], "[] \t\n\r");
+            if ($body !== '') {
+                // split on commas
+                foreach (preg_split('/,(?![^\'"]*[\'"])/', $body) as $item) {
+                    $existingItems[] = trim($item, " \t\n\r'\"");
+                }
+            }
         }
 
-        // Build the public-paths array
-        $public = var_export([
-            '/',
-            '/stripe/*',
-            '/docs',
-            '/docs/*',
-            '/success',
-            '/cancel',
-        ], true);
+        // 4) Define the six paths to ensure
+        $toAdd = [
+            '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'
+        ];
 
-        // Insert before the *last* closing parenthesis of new AuthMiddleware(...)
-        $patched = preg_replace('/\)(?=[^()]*$)/', ", {$public})", $binding, 1);
+        // 5) Merge & preserve order + remove duplicates
+        $merged = array_values(array_unique(array_merge($existingItems, $toAdd)));
 
-        // The cast silences the static-analysis warning
-        $newContents = substr_replace($contents, $patched, (int) $pos, strlen($binding));
+        // 6) Build the new short-array literal
+        $publicPathsCode = "[\n"
+            . "    '" . implode("',\n    '", $merged) . "',\n"
+            . "]";
+
+        // 7) Reconstruct the argument list:
+        //    - replace the 4th arg if existed, otherwise append it
+        if (isset($args[3]) && str_starts_with($args[3], '[')) {
+            $args[3] = $publicPathsCode;
+        } else {
+            $args[] = $publicPathsCode;
+        }
+
+        // 8) Re-join arguments and rebuild the call
+        $newCall = 'new AuthMiddleware(' . implode(', ', $args) . ')';
+
+        // 9) Splice back into the file
+        $newContents = substr_replace(
+            $contents,
+            $newCall,
+            (int)$offset,
+            strlen($fullCall)
+        );
 
         file_put_contents($file, $newContents);
-        $this->info('✓ Exposed Stripe and docs paths in AuthMiddleware publicPaths.');
+        $this->info('✓ Merged Stripe & docs paths into AuthMiddleware publicPaths.');
     }
 
     /**
