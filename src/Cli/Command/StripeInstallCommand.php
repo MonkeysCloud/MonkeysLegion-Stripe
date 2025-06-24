@@ -135,124 +135,93 @@ final class StripeInstallCommand extends Command
         $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing));
     }
 
-
     /**
-     * Add Stripe endpoint patterns to AuthMiddleware publicPaths in config/app.php.
+     * Exposed stripe paths.
+     *
+     * @param string $projectRoot
+     * @return void
      */
     private function exposeStripePaths(string $projectRoot): void
     {
-        $file = "{$projectRoot}/config/app.php";
-        if (!is_file($file)) {
-            $this->warn('config/app.php not found; skipping public path injection.');
+        $mlcFile = "{$projectRoot}/config/app.mlc";
+        if (!is_file($mlcFile)) {
+            $this->warn('config/app.mlc not found; skipping public path injection.');
             return;
         }
 
-        $contents = file_get_contents($file);
+        $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
+        $toAdd = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
 
-        // 1) Locate the start of “new AuthMiddleware(”
-        $needle    = 'new AuthMiddleware(';
-        $basePos   = strpos($contents, $needle);
-        if ($basePos === false) {
-            $this->warn('AuthMiddleware binding not found; manual configuration may be required.');
-            return;
-        }
-
-        // 2) Find the matching “)” for that constructor call
-        $openPos   = $basePos + strlen($needle) - 1;
-        $depth     = 1;
-        $len       = strlen($contents);
-        $i         = $openPos;
-        while ($i < $len && $depth > 0) {
-            $i++;
-            if ($contents[$i] === '(') {
-                $depth++;
-            } elseif ($contents[$i] === ')') {
-                $depth--;
+        // 1) Find the “auth:” section
+        $authLine = null;
+        foreach ($lines as $idx => $line) {
+            if (preg_match('/^\s*auth:\s*$/', $line)) {
+                $authLine = $idx;
+                break;
             }
         }
-        if ($depth !== 0) {
-            $this->warn('Could not find end of AuthMiddleware constructor.');
-            return;
-        }
-        $closePos = $i;
-
-        // 3) Pull out the full constructor call
-        $fullCall = substr($contents, $basePos, $closePos - $basePos + 1);
-
-        // If we already injected, bail
-        if (str_contains($fullCall, '/stripe/*')) {
-            $this->info('Stripe paths are already exposed; nothing to do.');
+        if ($authLine === null) {
+            $this->warn("No `auth:` section in app.mlc; cannot inject public_paths.");
             return;
         }
 
-        // 4) Extract just the inside of the parentheses
-        $innerArgs = substr($fullCall, strlen($needle), -1);
+        // 2) Find existing public_paths: and its items
+        $publicKey     = null;
+        $existing      = [];
+        $indent        = '';
+        $listStart     = null;
+        $listEnd       = null;
 
-        // 5) Split on commas at depth 0 to get the 4 args (or fewer)
-        $args = [];
-        $buf  = '';
-        $depth = 0;
-        for ($j = 0, $n = strlen($innerArgs); $j < $n; $j++) {
-            $ch = $innerArgs[$j];
-            if ($ch === '(' || $ch === '[') {
-                $depth++;
-            } elseif ($ch === ')' || $ch === ']') {
-                $depth--;
+        for ($i = $authLine + 1, $n = count($lines); $i < $n; $i++) {
+            $line = $lines[$i];
+            // if we hit a new top-level key (same indent as auth), stop scanning
+            if (preg_match('/^(\S.*):\s*$/', $line, $m) && strlen($m[1]) === strlen('auth') /* crude indent check */) {
+                break;
             }
-
-            // top-level comma → split
-            if ($ch === ',' && $depth === 0) {
-                $args[] = trim($buf);
-                $buf = '';
-            } else {
-                $buf .= $ch;
+            // detect public_paths:
+            if ($publicKey === null && preg_match('/^(\s*)public_paths:\s*$/', $line, $m)) {
+                $publicKey = $i;
+                $indent    = $m[1];
+                continue;
+            }
+            // if we're in the list block, collect items
+            if ($publicKey !== null && preg_match('/^' . preg_quote($indent . '  -', '/') . '\s*(.+)$/', $line, $m)) {
+                $existing[] = $m[1];
+                $listEnd    = $i;
+            } elseif ($publicKey !== null && $listEnd !== null) {
+                // we've left the list
+                break;
             }
         }
-        if (strlen(trim($buf))) {
-            $args[] = trim($buf);
-        }
 
-        // 6) Determine existing publicPaths (4th arg)
-        $existing = [];
-        if (isset($args[3]) && str_starts_with($args[3], '[')) {
-            // pull out all quoted strings in that array
-            preg_match_all("/'([^']*)'/", $args[3], $m);
-            $existing = $m[1];
-        }
-
-        // 7) Our six paths to ensure
-        $toAdd = [
-            '/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'
-        ];
-
-        // 8) Merge, preserve order, dedupe
+        // 3) Merge in the six paths
         $merged = array_values(array_unique(array_merge($existing, $toAdd)));
 
-        // 9) Build a fresh short-array literal
-        $newArray = "[\n"
-            . "    '" . implode("',\n    '", $merged) . "',\n"
-            . "]";
-
-        // 10) Replace or append the 4th argument
-        if (isset($args[3]) && str_starts_with($args[3], '[')) {
-            $args[3] = $newArray;
+        // 4) Build the new block
+        $block = [];
+        if ($publicKey === null) {
+            // insert public_paths: after auth:
+            $insertAt = $authLine + 1;
+            $block[]  = $indent . 'public_paths:';
         } else {
-            $args[] = $newArray;
+            // overwrite from publicKey to listEnd
+            $insertAt = $publicKey;
+            // if there was no list, we still overwrite only the key line
+            $endReplace = $listEnd ?? $publicKey;
+            // remove old lines
+            array_splice($lines, $publicKey, $endReplace - $publicKey + 1);
+        }
+        // now append the merged items under that key
+        foreach ($merged as $path) {
+            $block[] = $indent . '  - ' . $path;
         }
 
-        // 11) Reconstruct the new constructor call
-        $newCall = $needle . implode(', ', $args) . ')';
+        // 5) Splice the new block into $lines
+        array_splice($lines, $insertAt, 0, $block);
 
-        // 12) Splice it back into the file
-        $newContents = substr_replace(
-            $contents,
-            $newCall,
-            $basePos,
-            strlen($fullCall)
-        );
-
-        file_put_contents($file, $newContents);
-        $this->info('✓ Merged Stripe & docs paths into AuthMiddleware publicPaths.');
+        // 6) Write back
+        file_put_contents($mlcFile, implode("\n", $lines) . "\n");
+        $this->info('✓ Merged Stripe & docs paths into config/app.mlc › auth.public_paths.');
     }
 
     /**
