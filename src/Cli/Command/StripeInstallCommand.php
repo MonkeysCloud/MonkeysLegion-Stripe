@@ -66,7 +66,10 @@ final class StripeInstallCommand extends Command
         // 3) Patch config/app.php: expose Stripe routes as public paths
         $this->exposeStripePaths($projectRoot);
 
-        // 4) Patch config/app.php: add WebhookMiddleware binding
+        // 4) Patch config/app.mlc: add stripe { … } section
+        $this->addStripeConfig($projectRoot);
+
+        // 5) Patch config/app.php: add WebhookMiddleware binding
         $this->addWebhookBinding($projectRoot);
 
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
@@ -270,6 +273,116 @@ final class StripeInstallCommand extends Command
 
         file_put_contents($mlcFile, implode("\n", $out) . "\n");
         $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.');
+    }
+
+    /**
+     * Make sure config/app.mlc contains a stripe { … } section
+     * with endpoint_secrets, tolerance, default_ttl and test_mode.
+     *
+     * @param string $projectRoot
+     */
+    private function addStripeConfig(string $projectRoot): void
+    {
+        $mlcFile = "{$projectRoot}/config/app.mlc";
+        if (!is_file($mlcFile)) {
+            $this->warn('config/app.mlc not found; skipping stripe section injection.');
+            return;
+        }
+
+        $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
+
+        // -----------------------------------------------------------------
+        // 1) Find an existing `stripe {` block (track braces)
+        // -----------------------------------------------------------------
+        $stripeStart = null;
+        $stripeEnd   = null;
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^\s*stripe\s*\{\s*$/', $line)) {
+                $stripeStart = $i;
+                // walk to matching }
+                $depth = 1;
+                for ($j = $i + 1, $n = count($lines); $j < $n; $j++) {
+                    if (strpos($lines[$j], '{') !== false) $depth++;
+                    if (strpos($lines[$j], '}') !== false) $depth--;
+                    if ($depth === 0) { $stripeEnd = $j; break; }
+                }
+                break;
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 2) Existing child-indent or default four spaces
+        // -----------------------------------------------------------------
+        $indent = '    ';
+        if ($stripeStart !== null && $stripeStart + 1 < count($lines)) {
+            if (preg_match('/^(\s+)\S/', $lines[$stripeStart + 1], $m)) {
+                $indent = $m[1];
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 3) Build defaults and merge with any existing keys
+        // -----------------------------------------------------------------
+        $defaults = [
+            'endpoint_secrets'     => '{ webhook_secret : "sk_live_…", webhook_secret_test : "sk_test_…" }',
+            'webhook_tolerance'    => '300',
+            'webhook_default_ttl'  => '172800',
+            'test_mode'            => 'true',
+        ];
+
+        $existing = [];
+
+        if ($stripeStart !== null) {
+            // scan the existing block for key = value pairs
+            for ($k = $stripeStart + 1; $k < $stripeEnd; $k++) {
+                if (preg_match('/^\s*([A-Za-z0-9_]+)\s*=\s*(.+)$/', $lines[$k], $m)) {
+                    $existing[$m[1]] = trim($m[2]);
+                }
+            }
+        }
+
+        // Final key/value list (existing overrides defaults)
+        $kv = $defaults;
+        foreach ($existing as $k => $v) {
+            $kv[$k] = $v;
+        }
+
+        // -----------------------------------------------------------------
+        // 4) Compose the block
+        // -----------------------------------------------------------------
+        $block = [];
+        $block[] = 'stripe {';
+        foreach ($kv as $k => $v) {
+            $block[] = $indent . $k . ' = ' . $v;
+        }
+        $block[] = '}';
+
+        // -----------------------------------------------------------------
+        // 5) Splice into file
+        // -----------------------------------------------------------------
+        if ($stripeStart !== null && $stripeEnd !== null) {
+            // replace old block
+            array_splice($lines, $stripeStart, $stripeEnd - $stripeStart + 1, $block);
+        } else {
+            // append after auth { … } or at end of file
+            $insertAt = count($lines);
+            foreach ($lines as $i => $line) {
+                if (preg_match('/^\s*auth\s*\{\s*$/', $line)) {
+                    // jump to its closing brace
+                    $d = 1;
+                    for ($j = $i + 1; $j < count($lines); $j++) {
+                        if (strpos($lines[$j], '{') !== false) $d++;
+                        if (strpos($lines[$j], '}') !== false) $d--;
+                        if ($d === 0) { $insertAt = $j + 1; break; }
+                    }
+                    break;
+                }
+            }
+            array_splice($lines, $insertAt, 0, array_merge([''], $block)); // blank line before
+        }
+
+        file_put_contents($mlcFile, implode("\n", $lines) . "\n");
+        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.');
     }
 
     /**
