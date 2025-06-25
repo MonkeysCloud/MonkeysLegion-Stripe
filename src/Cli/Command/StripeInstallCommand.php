@@ -152,96 +152,116 @@ final class StripeInstallCommand extends Command
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
         $toAdd = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
 
-        // 1) locate `auth:`
-        $authLine = null;
-        foreach ($lines as $idx => $line) {
-            if (preg_match('/^\s*auth:\s*$/', $line)) {
-                $authLine = $idx;
+        // 1) Find auth { … } block
+        $authStart = null;
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^\s*auth\s*\{\s*$/', $line)) {
+                $authStart = $i;
                 break;
             }
         }
-        if ($authLine === null) {
-            $this->warn("No `auth:` section in app.mlc; cannot inject public_paths.");
+        if ($authStart === null) {
+            $this->warn('No `auth {` section in app.mlc; cannot inject public_paths.');
+            return;
+        }
+        // find matching closing brace
+        $depth = 1; $authEnd = null;
+        for ($i = $authStart + 1, $n = count($lines); $i < $n; $i++) {
+            if (strpos($lines[$i], '{') !== false)  $depth++;
+            if (strpos($lines[$i], '}') !== false)  $depth--;
+            if ($depth === 0) { $authEnd = $i; break; }
+        }
+        if ($authEnd === null) {
+            $this->warn('Could not find end of auth { … } block.');
             return;
         }
 
-        // 2) detect child indent (e.g. four spaces)
-        $childIndent = '    ';  // fallback
-        for ($i = $authLine + 1, $n = count($lines); $i < $n; $i++) {
-            if (trim($lines[$i]) === '') continue;
-            if (preg_match('/^(\s+)\S/', $lines[$i], $m)) {
-                $childIndent = $m[1];
-                break;
-            }
-        }
+        // 2) Extract inner block lines
+        $blockLines = array_slice($lines, $authStart + 1, $authEnd - $authStart - 1);
 
-        // 3) scan for existing public_paths block
-        $existing   = [];
-        $listStart  = null;
-        $listEnd    = null;
-        $inMultiline = false;
+        // 3) Detect child-indent (default to 4 spaces)
+        preg_match('/^(\s*)\S/', $blockLines[0] ?? '', $m);
+        $indent = $m[1] ?? '    ';
 
-        for ($i = $authLine + 1, $n = count($lines); $i < $n; $i++) {
-            $line = $lines[$i];
+        // 4) Locate existing public_paths array (inline or multiline)
+        $exist     = [];
+        $listStart = $listEnd = null;
+        $inMulti   = false;
 
-            // stop if next top-level key
-            if (preg_match('/^\S/', $line)) break;
+        foreach ($blockLines as $j => $raw) {
+            $l = $raw;
 
-            // inline form: public_paths ["/", "/foo"]
+            // inline form: public_paths = ["/a","/b"]
             if ($listStart === null &&
-                preg_match('/^\s*public_paths\s*\[\s*(.*?)\s*\]\s*$/', $line, $m)
+                preg_match('/^\s*public_paths\s*=\s*\[\s*(.*?)\s*\]\s*$/', $l, $m2)
             ) {
-                $listStart = $i;
-                $listEnd   = $i;
-                // extract quoted strings
-                preg_match_all('/"([^"]*)"/', $m[1], $mi);
-                $existing = $mi[1];
+                $listStart = $j;
+                $listEnd   = $j;
+                preg_match_all('/"([^"]*)"/', $m2[1], $m3);
+                $exist = $m3[1];
                 break;
             }
 
-            // multiline start: public_paths [
+            // multiline start: public_paths = [
             if ($listStart === null &&
-                preg_match('/^\s*public_paths\s*\[\s*$/', $line)
+                preg_match('/^\s*public_paths\s*=\s*\[\s*$/', $l)
             ) {
-                $listStart   = $i;
-                $inMultiline = true;
+                $listStart = $j;
+                $inMulti   = true;
                 continue;
             }
 
-            // inside multiline list, collect items or detect closing ]
-            if ($inMultiline) {
-                if (preg_match('/^\s*\]\s*$/', $line)) {
-                    $listEnd = $i;
+            // inside multiline
+            if ($inMulti) {
+                if (preg_match('/^\s*\]\s*$/', $l)) {
+                    $listEnd = $j;
                     break;
                 }
-                if (preg_match('/"([^"]*)"/', $line, $m2)) {
-                    $existing[] = $m2[1];
+                if (preg_match('/"([^"]*)"/', $l, $m4)) {
+                    $exist[] = $m4[1];
                 }
             }
         }
 
-        // 4) merge & dedupe
-        $merged = array_values(array_unique(array_merge($existing, $toAdd)));
+        // 5) Merge & dedupe
+        $merged = array_values(array_unique(array_merge($exist, $toAdd)));
 
-        // 5) build the new multiline block
-        $block = [];
-        $block[] = $childIndent . 'public_paths [';
-        foreach ($merged as $p) {
-            $block[] = $childIndent . '  "' . $p . '",';
+        // 6) Build the new block in “public_paths = [ … ]” style
+        $newBlock = [];
+        $newBlock[] = $indent . 'public_paths = [';
+        $lastIndex  = count($merged) - 1;
+        foreach ($merged as $idx => $p) {
+            $comma = $idx < $lastIndex ? ',' : '';
+            $newBlock[] = $indent . '  "' . $p . '"' . $comma;
         }
-        $block[] = $childIndent . ']';
+        $newBlock[] = $indent . ']';
 
-        // 6) splice it in (replace old inline or multiline)
+        // 7) Splice into blockLines (replace or insert)
         if ($listStart !== null && $listEnd !== null) {
-            array_splice($lines, $listStart, $listEnd - $listStart + 1, $block);
+            array_splice($blockLines, $listStart, $listEnd - $listStart + 1, $newBlock);
         } else {
-            // no existing key → insert right after auth:
-            array_splice($lines, $authLine + 1, 0, $block);
+            array_splice($blockLines, 0, 0, $newBlock);
         }
 
-        // 7) write back
-        file_put_contents($mlcFile, implode("\n", $lines) . "\n");
-        $this->info('✓ Updated config/app.mlc › auth.public_paths to multiline with all Stripe/docs paths.');
+        // 8) Reassemble full file
+        $out = [];
+        // lines up through auth {
+        for ($i = 0; $i <= $authStart; $i++) {
+            $out[] = $lines[$i];
+        }
+        // updated auth body
+        foreach ($blockLines as $ln) {
+            $out[] = $ln;
+        }
+        // closing brace
+        $out[] = $lines[$authEnd];
+        // remainder
+        for ($i = $authEnd + 1, $n = count($lines); $i < $n; $i++) {
+            $out[] = $lines[$i];
+        }
+
+        file_put_contents($mlcFile, implode("\n", $out) . "\n");
+        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.');
     }
 
     /**
