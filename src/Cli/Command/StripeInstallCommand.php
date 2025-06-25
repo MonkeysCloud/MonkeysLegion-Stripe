@@ -66,10 +66,18 @@ final class StripeInstallCommand extends Command
         // 3) Patch config/app.php: expose Stripe routes as public paths
         $this->exposeStripePaths($projectRoot);
 
+        // 4) Patch config/app.php: add WebhookMiddleware binding
+        $this->addWebhookBinding($projectRoot);
+
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
         return self::SUCCESS;
     }
 
+    /**
+     * Ensure the StripeServiceProvider is registered in config/app.php.
+     *
+     * @param string $projectRoot
+     */
     private function ensureEnvKeys(string $projectRoot): void
     {
         $envFile = $projectRoot . '/.env';
@@ -262,6 +270,73 @@ final class StripeInstallCommand extends Command
 
         file_put_contents($mlcFile, implode("\n", $out) . "\n");
         $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.');
+    }
+
+    /**
+     * Ensure DI knows how to build WebhookMiddleware.
+     * Called from handle() after the other patch steps.
+     *
+     * @param string $projectRoot
+     */
+    private function addWebhookBinding(string $projectRoot): void
+    {
+        $appFile = "{$projectRoot}/config/app.php";
+        if (!is_file($appFile)) {
+            $this->warn('config/app.php not found; cannot inject WebhookMiddleware binding.');
+            return;
+        }
+
+        $code = file_get_contents($appFile);
+
+        // 1) Bail if the binding already exists
+        if (str_contains($code, 'WebhookMiddleware::class')) {
+            $this->info('WebhookMiddleware binding already present; nothing to do.');
+            return;
+        }
+
+        // 2) Locate the outermost "return [" that begins the DI array
+        if (!preg_match('/return\s*\[\s*$/m', $code, $m, PREG_OFFSET_CAPTURE)) {
+            $this->warn('Could not locate the DI definition array in app.php.');
+            return;
+        }
+        $arrayStart = $m[0][1] + strlen($m[0][0]);   // position *after* the line
+
+        // 3) Walk forward to find the matching closing "];"
+        $depth = 1;           // we’re inside "["
+        $pos   = $arrayStart;
+        $len   = strlen($code);
+        while ($pos < $len && $depth > 0) {
+            $ch = $code[$pos];
+            if ($ch === '[') { $depth++; }
+            if ($ch === ']') { $depth--; }
+            $pos++;
+        }
+        if ($depth !== 0) {
+            $this->warn('Malformed DI array in app.php; could not find closing bracket.');
+            return;
+        }
+        $arrayEnd = $pos - 1;   // position of ']'
+
+        // 4) Build the factory text with same indent as others (4 spaces)
+        $factory = <<<'PHP'
+
+    /* ----------------------------------------------------------------- */
+    /* Stripe — WebhookMiddleware binding                                */
+    /* ----------------------------------------------------------------- */
+    WebhookMiddleware::class => fn($c) => new WebhookMiddleware(
+        $c->get(MlcConfig::class)->get('stripe.endpoint_secrets', []),
+        (int)  $c->get(MlcConfig::class)->get('stripe.webhook_tolerance', 300),
+        $c->get(MemoryIdempotencyStore::class),
+        $c->get(MlcConfig::class)->get('stripe.webhook_default_ttl', 172800),
+        (bool) $c->get(MlcConfig::class)->get('stripe.test_mode', true),
+    ),
+PHP;
+
+        // 5) Inject before the closing "]"
+        $patched = substr_replace($code, $factory . "\n", $arrayEnd, 0);
+        file_put_contents($appFile, $patched);
+
+        $this->info('✓ Added WebhookMiddleware binding to config/app.php.');
     }
 
     /**
