@@ -68,7 +68,10 @@
   },
   "extra": {
     "monkeyslegion": {
-      "service-provider": "MonkeysLegion\\\\Stripe\\\\Provider\\\\StripeServiceProvider"
+      "service-provider": "MonkeysLegion\\\\Stripe\\\\Provider\\\\StripeServiceProvider",
+      "providers": [
+        "MonkeysLegion\\Stripe\\Provider\\StripeServiceProvider"
+      ]
     },
     "branch-alias": {
       "dev-main": "1.x-dev"
