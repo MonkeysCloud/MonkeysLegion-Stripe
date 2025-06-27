@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/Template/helpers.php';
 
 use Stripe\Webhook;
 use Stripe\Exception\SignatureVerificationException;
@@ -38,9 +38,6 @@ class KeyHelper
 
     public function __construct(array $argv)
     {
-        $working_dir = getcwd();
-        if (!$working_dir) throw new RuntimeException("Could not determine the current working directory.");
-
         // Parse --stage flag
         foreach ($argv as $arg) {
             if (str_starts_with($arg, '--stage=')) {
@@ -53,7 +50,7 @@ class KeyHelper
         }
 
         // Construct the full path to the .env.<stage> file
-        $this->keyFile = $working_dir . '/.env.' . $this->stage;
+        $this->keyFile = WORKING_DIRECTORY . '/.env.' . $this->stage;
     }
     /**
      * Generate a cryptographically secure random key

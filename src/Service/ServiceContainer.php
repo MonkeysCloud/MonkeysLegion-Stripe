@@ -13,11 +13,7 @@ class ServiceContainer
     private array $factories = [];
     private array $config = [];
 
-    private function __construct()
-    {
-        $dotenv = Dotenv::createImmutable(getcwd() . '/..');
-        $dotenv->load();
-    }
+    private function __construct() {}
 
     /**
      * Get the singleton instance of the ServiceContainer.

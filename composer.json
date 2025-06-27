@@ -43,7 +43,7 @@
       "MonkeysLegion\\Stripe\\": "src/"
     },
     "files": [
-      "src/Config/merge.php"
+      "src/Template/helpers.php"
     ]
   },
   "autoload-dev": {

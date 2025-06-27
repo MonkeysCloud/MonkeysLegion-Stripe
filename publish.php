@@ -1,13 +1,8 @@
 <?php
-require __DIR__ . '/vendor/autoload.php';
 
-use Dotenv\Dotenv;
+declare(strict_types=1);
 
-$projectRoot = getcwd();
-$dotenv = Dotenv::createImmutable($projectRoot);
-$dotenv->load();
-
-$appEnv = $_ENV['APP_ENV'] ?? 'dev';
+require_once __DIR__ . '/src/Template/helpers.php';
 
 $source = __DIR__ . '/config/stripe.php';
 
@@ -16,11 +11,12 @@ if (!file_exists($source)) {
     exit(1);
 }
 
-$destination = $projectRoot . '/config/stripe/stripe.' . ($appEnv) . '.php';
+$destination = WORKING_DIRECTORY . '/config/stripe.' . ($_ENV['APP_ENV'] ?? 'dev') . '.php';
 
 // Ensure the destination directory exists
-if (!is_dir(dirname($destination))) {
-    mkdir(dirname($destination), 0755, true);
+$destinationDir = dirname($destination);
+if (!is_dir($destinationDir)) {
+    mkdir($destinationDir, 0755, true);
 }
 
 // Remove the existing destination file if it exists
@@ -35,5 +31,9 @@ if (file_exists($destination)) {
     unlink($destination); // Remove the existing file
 }
 
-$output = shell_exec('cp ' . $source . ' ' . $destination);
-echo "✅ Config file copied to: $destination\n";
+if (copy($source, $destination)) {
+    echo "✅ Config file copied to: $destination\n";
+} else {
+    echo "❌ Failed to copy config file.\n";
+    exit(1);
+}

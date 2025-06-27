@@ -2,8 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Provider;
 
-define('WORKING_DIRECTORY', getcwd() . '/..');
-define('STRIPE_CONFIG_PATH', WORKING_DIRECTORY . '/config/stripe.php');
+define('STRIPE_CONFIG_PATH', WORKING_DIRECTORY . '/config/stripe.' . ($_ENV['APP_ENV'] ?? 'dev') . '.php');
 define('STRIPE_CONFIG_DEFAULT_PATH', __DIR__ . '/../../config/stripe.php');
 define('DB_CONFIG_PATH', WORKING_DIRECTORY . '/../config/database.php');
 define('DB_CONFIG_DEFAULT_PATH', __DIR__ . '/../../config/database.php');
@@ -31,15 +30,21 @@ class StripeServiceProvider
     public static function register(ContainerBuilder $c): void
     {
         $in_container = ServiceContainer::getInstance();
+
+        // Load stripe configurations
         $stripeConfig = file_exists(STRIPE_CONFIG_PATH) ? require STRIPE_CONFIG_PATH : [];
         $defaults = file_exists(STRIPE_CONFIG_DEFAULT_PATH) ? require STRIPE_CONFIG_DEFAULT_PATH : [];
-        $mergedStripeConfig = configMerger($stripeConfig, $defaults);
-        $in_container->setConfig($mergedStripeConfig, 'stripe');
+        $mergedStripeConfig = array_replace_recursive($defaults, $stripeConfig);
 
+        // Load Database configurations
         $dbConfig = file_exists(DB_CONFIG_PATH) ? require DB_CONFIG_PATH : [];
         $dbDefaults = file_exists(DB_CONFIG_DEFAULT_PATH) ? require DB_CONFIG_DEFAULT_PATH : [];
-        $mergedDbConfig = configMerger($dbConfig, $dbDefaults);
-        $in_container->setConfig($mergedDbConfig, 'db');        // Register in internal container
+        $mergedDbConfig = array_replace_recursive($dbDefaults, $dbConfig);
+
+        // set configurations in the ServiceContainer
+        $in_container->setConfig($mergedStripeConfig, 'stripe');
+        $in_container->setConfig($mergedDbConfig, 'db');
+
         $in_container->set(Connection::class, fn() => new Connection($mergedDbConfig));
         $in_container->set(QueryBuilder::class, fn() => new QueryBuilder($in_container->get(Connection::class)));
         $in_container->set(StripeClient::class, fn() => new StripeClient($mergedStripeConfig['secret_key']));
