@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Stripe\Cli\Command;
@@ -31,9 +32,9 @@ final class StripeInstallCommand extends Command
             "{$stubDir}/Controller/WebhookController.php"               => "{$projectRoot}/app/Controller/WebhookController.php",
             "{$stubDir}/config/stripe.php"                              => "{$projectRoot}/config/stripe.php",
             "{$stubDir}/config/stripe.mlc"                              => "{$projectRoot}/config/stripe.mlc",
-            "{$stubDir}/config/stripe/stripe.dev.php"                   => "{$projectRoot}/config/stripe/stripe.dev.php",
-            "{$stubDir}/config/stripe/stripe.prod.php"                  => "{$projectRoot}/config/stripe/stripe.prod.php",
-            "{$stubDir}/config/stripe/stripe.test.php"                  => "{$projectRoot}/config/stripe/stripe.test.php",
+            "{$stubDir}/config/stripe/stripe.dev.php"                   => "{$projectRoot}/config/stripe.dev.php",
+            "{$stubDir}/config/stripe/stripe.prod.php"                  => "{$projectRoot}/config/stripe.prod.php",
+            "{$stubDir}/config/stripe/stripe.test.php"                  => "{$projectRoot}/config/stripe.test.php",
             "{$stubDir}/public/assets/css/app.css"                      => "{$projectRoot}/public/assets/css/app.css",
             "{$stubDir}/resources/views/components/nav-bar.ml.php"      => "{$projectRoot}/resources/views/components/nav-bar.ml.php",
             "{$stubDir}/resources/views/docs/checkout-session.ml.php"   => "{$projectRoot}/resources/views/docs/checkout-session.ml.php",
@@ -176,11 +177,15 @@ final class StripeInstallCommand extends Command
             return;
         }
         // find matching closing brace
-        $depth = 1; $authEnd = null;
+        $depth = 1;
+        $authEnd = null;
         for ($i = $authStart + 1, $n = count($lines); $i < $n; $i++) {
             if (strpos($lines[$i], '{') !== false)  $depth++;
             if (strpos($lines[$i], '}') !== false)  $depth--;
-            if ($depth === 0) { $authEnd = $i; break; }
+            if ($depth === 0) {
+                $authEnd = $i;
+                break;
+            }
         }
         if ($authEnd === null) {
             $this->warn('Could not find end of auth { … } block.');
@@ -203,7 +208,8 @@ final class StripeInstallCommand extends Command
             $l = $raw;
 
             // inline form: public_paths = ["/a","/b"]
-            if ($listStart === null &&
+            if (
+                $listStart === null &&
                 preg_match('/^\s*public_paths\s*=\s*\[\s*(.*?)\s*\]\s*$/', $l, $m2)
             ) {
                 $listStart = $j;
@@ -214,7 +220,8 @@ final class StripeInstallCommand extends Command
             }
 
             // multiline start: public_paths = [
-            if ($listStart === null &&
+            if (
+                $listStart === null &&
                 preg_match('/^\s*public_paths\s*=\s*\[\s*$/', $l)
             ) {
                 $listStart = $j;
@@ -304,7 +311,10 @@ final class StripeInstallCommand extends Command
                 for ($j = $i + 1, $n = count($lines); $j < $n; $j++) {
                     if (strpos($lines[$j], '{') !== false) $depth++;
                     if (strpos($lines[$j], '}') !== false) $depth--;
-                    if ($depth === 0) { $stripeEnd = $j; break; }
+                    if ($depth === 0) {
+                        $stripeEnd = $j;
+                        break;
+                    }
                 }
                 break;
             }
@@ -373,7 +383,10 @@ final class StripeInstallCommand extends Command
                     for ($j = $i + 1; $j < count($lines); $j++) {
                         if (strpos($lines[$j], '{') !== false) $d++;
                         if (strpos($lines[$j], '}') !== false) $d--;
-                        if ($d === 0) { $insertAt = $j + 1; break; }
+                        if ($d === 0) {
+                            $insertAt = $j + 1;
+                            break;
+                        }
                     }
                     break;
                 }
@@ -420,8 +433,12 @@ final class StripeInstallCommand extends Command
         $len   = strlen($code);
         while ($pos < $len && $depth > 0) {
             $ch = $code[$pos];
-            if ($ch === '[') { $depth++; }
-            if ($ch === ']') { $depth--; }
+            if ($ch === '[') {
+                $depth++;
+            }
+            if ($ch === ']') {
+                $depth--;
+            }
             $pos++;
         }
         if ($depth !== 0) {
