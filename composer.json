@@ -25,8 +25,8 @@
   "require": {
     "php": "^8.4",
     "guzzlehttp/guzzle": "^7.9",
-    "monkeyscloud/monkeyslegion-core": "^1.0@dev",
-    "monkeyscloud/monkeyslegion-query": "^1.0@dev",
+    "monkeyscloud/monkeyslegion-core": "^1.0",
+    "monkeyscloud/monkeyslegion-query": "^1.0",
     "psr/container": "^2.0",
     "psr/http-client": "^1.0",
     "psr/http-factory": "^1.1",
@@ -74,7 +74,7 @@
       ]
     },
     "branch-alias": {
-      "dev-main": "1.x-dev"
+      "dev-main": "1.0.x-dev"
     }
   },
   "suggest": {
