@@ -849,23 +849,6 @@ By default, the package uses an internal Logger class that supports PSR-3 Logger
 - **Testing** (`APP_ENV=test`): Notice level messages  
 - **Production** (`APP_ENV=prod`): Warning level messages
 
-### Configuring Custom Logger
-
-To use your own PSR-3 compatible logger (like Monolog), configure it through the service provider:
-
-```php
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-use MonkeysLegion\Stripe\Provider\StripeServiceProvider;
-
-// Create your Monolog logger
-$monolog = new Logger('stripe');
-$monolog->pushHandler(new StreamHandler('path/to/stripe.log', Logger::DEBUG));
-
-// Set it in the Stripe service provider
-StripeServiceProvider::setLogger($monolog);
-```
-
 ### Logger Features
 
 - **Structured Logging**: Includes context data like request IDs, error codes, and retry counts

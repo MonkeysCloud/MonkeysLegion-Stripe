@@ -8,6 +8,7 @@ use FilesystemIterator;
 use MonkeysLegion\Cli\Console\Attributes\Command as CommandAttr;
 use MonkeysLegion\Cli\Console\Command;
 use MonkeysLegion\Cli\Command\MakerHelpers;
+use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
@@ -72,6 +73,9 @@ final class StripeInstallCommand extends Command
 
         // 5) Patch config/app.php: add WebhookMiddleware binding
         $this->addWebhookBinding($projectRoot);
+
+        // 6) Add StripeServiceProvider to composer.json
+        $this->addServiceProviderToComposer($projectRoot);
 
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
         return self::SUCCESS;
@@ -420,6 +424,46 @@ final class StripeInstallCommand extends Command
             return;
         }
 
+        // Check if required use statements already exist
+        $hasWebhookMiddleware = str_contains($code, 'WebhookMiddleware');
+        $hasMemoryIdempotencyStore = str_contains($code, 'MemoryIdempotencyStore');
+        $hasMlcConfig = str_contains($code, 'MlcConfig');
+
+        // If any use statements are missing, add them after declare(strict_types=1);
+        if (!$hasWebhookMiddleware || !$hasMemoryIdempotencyStore || !$hasMlcConfig) {
+            $useStatements = <<<'PHP'
+
+
+use MonkeysLegion\Mlc\{
+    Config as MlcConfig,
+};
+use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
+use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
+
+PHP;
+
+            // Try to find declare(strict_types=1) statement
+            if (preg_match('/declare\s*\(\s*strict_types\s*=\s*1\s*\)\s*;/m', $code, $declareMatches, PREG_OFFSET_CAPTURE)) {
+                // Insert right after the declare statement
+                $insertPos = $declareMatches[0][1] + strlen($declareMatches[0][0]);
+                $code = substr_replace($code, $useStatements, $insertPos, 0);
+                $this->info('✓ Added required use statements after declare(strict_types=1) in app.php.');
+            } else if (preg_match('/namespace\s+.+;/m', $code, $nsMatches, PREG_OFFSET_CAPTURE)) {
+                // Fallback: Insert after namespace
+                $insertPos = $nsMatches[0][1] + strlen($nsMatches[0][0]);
+                $code = substr_replace($code, $useStatements, $insertPos, 0);
+                $this->info('✓ Added required use statements after namespace in app.php.');
+            } else {
+                // Last resort: Insert after <?php
+                $phpPos = strpos($code, '<?php');
+                if ($phpPos !== false) {
+                    $insertPos = $phpPos + 5;
+                    $code = substr_replace($code, $useStatements, $insertPos, 0);
+                    $this->info('✓ Added required use statements after <?php in app.php.');
+                }
+            }
+        }
+
         // 2) Locate the outermost "return [" that begins the DI array
         if (!preg_match('/return\s*\[\s*$/m', $code, $m, PREG_OFFSET_CAPTURE)) {
             $this->warn('Could not locate the DI definition array in app.php.');
@@ -450,23 +494,76 @@ final class StripeInstallCommand extends Command
         // 4) Build the factory text with same indent as others (4 spaces)
         $factory = <<<'PHP'
 
-    /* ----------------------------------------------------------------- */
-    /* Stripe — WebhookMiddleware binding                                */
-    /* ----------------------------------------------------------------- */
-    WebhookMiddleware::class => fn($c) => new WebhookMiddleware(
-        $c->get(MlcConfig::class)->get('stripe.endpoint_secrets', []),
-        (int)  $c->get(MlcConfig::class)->get('stripe.webhook_tolerance', 300),
-        $c->get(MemoryIdempotencyStore::class),
-        $c->get(MlcConfig::class)->get('stripe.webhook_default_ttl', 172800),
-        (bool) $c->get(MlcConfig::class)->get('stripe.test_mode', true),
-    ),
-PHP;
-
+                        /* ----------------------------------------------------------------- */
+                        /* Stripe — WebhookMiddleware binding                                */
+                        /* ----------------------------------------------------------------- */
+                        WebhookMiddleware::class => fn($c) => new WebhookMiddleware(
+                            $c->get(MlcConfig::class)->get('stripe.endpoint_secrets', []),
+                            (int)  $c->get(MlcConfig::class)->get('stripe.webhook_tolerance', 300),
+                            $c->get(MemoryIdempotencyStore::class),
+                            $c->get(MlcConfig::class)->get('stripe.webhook_default_ttl', 172800),
+                            (bool) $c->get(MlcConfig::class)->get('stripe.test_mode', true),
+                        ),
+                    PHP;
         // 5) Inject before the closing "]"
         $patched = substr_replace($code, $factory . "\n", $arrayEnd, 0);
         file_put_contents($appFile, $patched);
 
         $this->info('✓ Added WebhookMiddleware binding to config/app.php.');
+    }
+
+    /**
+     * Add MonkeysLegion\Stripe\Provider\StripeServiceProvider to composer.json providers section
+     *
+     * @param string $projectRoot
+     */
+    private function addServiceProviderToComposer(string $projectRoot): void
+    {
+        $composerFile = "{$projectRoot}/composer.json";
+        if (!is_file($composerFile)) {
+            $this->warn('composer.json not found; cannot add StripeServiceProvider.');
+            return;
+        }
+
+        // Read the composer.json file
+        $json = file_get_contents($composerFile);
+        $composerData = json_decode($json, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->warn('Failed to parse composer.json: ' . json_last_error_msg());
+            return;
+        }
+
+        // Provider to add
+        $provider = 'MonkeysLegion\\Stripe\\Provider\\StripeServiceProvider';
+
+        // Create nested structure if needed
+        if (!isset($composerData['extra'])) {
+            $composerData['extra'] = [];
+        }
+
+        if (!isset($composerData['extra']['monkeyslegion'])) {
+            $composerData['extra']['monkeyslegion'] = [];
+        }
+
+        if (!isset($composerData['extra']['monkeyslegion']['providers'])) {
+            $composerData['extra']['monkeyslegion']['providers'] = [];
+        }
+
+        // Check if the provider is already in the list
+        if (in_array($provider, $composerData['extra']['monkeyslegion']['providers'])) {
+            $this->info('StripeServiceProvider already registered in composer.json');
+            return;
+        }
+
+        // Add the provider
+        $composerData['extra']['monkeyslegion']['providers'][] = $provider;
+
+        // Write back to composer.json with pretty formatting
+        $jsonOptions = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
+        file_put_contents($composerFile, json_encode($composerData, $jsonOptions) . "\n");
+
+        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers');
     }
 
     /**
