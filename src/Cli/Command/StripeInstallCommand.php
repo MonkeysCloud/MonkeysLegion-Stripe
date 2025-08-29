@@ -159,7 +159,9 @@ final class StripeInstallCommand extends Command
      */
     private function exposeStripePaths(string $projectRoot): void
     {
-        $mlcFile = "{$projectRoot}/config/app.mlc";
+        $mlcFile = is_file("{$projectRoot}/config/auth.mlc")
+            ? "{$projectRoot}/config/auth.mlc"
+            : "{$projectRoot}/config/app.mlc";
         if (!is_file($mlcFile)) {
             $this->warn('config/app.mlc not found; skipping public path injection.');
             return;
