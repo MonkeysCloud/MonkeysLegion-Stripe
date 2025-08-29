@@ -29,7 +29,7 @@ All usage, configuration, and API references can be found in the [official Monke
 composer require monkeyscloud/monkeyslegion-stripe
 
 # Publish the configuration file
-php vendor/monkeyscloud/monkeyslegion-stripe/publish.php
+php vendor/bin/ml stripe:install
 
 # Set up your Stripe keys interactively
 php vendor/bin/key-helper set
