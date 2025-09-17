@@ -146,7 +146,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($envFile, "\n" . $append, FILE_APPEND);
-        $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing));
+        $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing) . "\n");
     }
 
     /**
@@ -286,7 +286,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $out) . "\n");
-        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.');
+        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.' . "\n");
     }
 
     /**
@@ -407,7 +407,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $lines) . "\n");
-        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.');
+        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.' . "\n");
     }
 
     /**
@@ -464,7 +464,7 @@ final class StripeInstallCommand extends Command
         $jsonOptions = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
         file_put_contents($composerFile, json_encode($composerData, $jsonOptions) . "\n");
 
-        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers');
+        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers' . "\n");
     }
 
     /**

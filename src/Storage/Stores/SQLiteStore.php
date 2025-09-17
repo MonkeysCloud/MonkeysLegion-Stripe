@@ -11,8 +11,14 @@ class SQLiteStore implements IdempotencyStoreInterface
 
     public function __construct(?string $dbPath = null)
     {
-        $resolved = $dbPath ?? realpath(__DIR__ . '/../../../database/idempotency_store.sqlite');
-        if (!$resolved) throw new \RuntimeException('Database path could not be resolved.');
+        if ($dbPath !== null) {
+            // Accept ':memory:' and any custom path directly
+            $resolved = $dbPath;
+        } else {
+            $defaultPath = __DIR__ . '/../../../database/idempotency_store.sqlite';
+            $resolved = realpath($defaultPath);
+            if (!$resolved) throw new \RuntimeException('Database path could not be resolved.');
+        }
         $this->dbPath = $resolved;
         $this->pdo = new \PDO("sqlite:{$this->dbPath}");
         $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);

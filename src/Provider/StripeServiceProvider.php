@@ -94,8 +94,8 @@ class StripeServiceProvider implements ProviderInterface
      */
     private static function registerStripeClients(ServiceContainer $container, array $stripeConfig): void
     {
-        $secret_key = isset($stripeConfig['secret_key']) && is_string($stripeConfig['secret_key']) ? $stripeConfig['secret_key'] : [];
-        $test_key = isset($stripeConfig['test_key']) && is_string($stripeConfig['test_key']) ? $stripeConfig['test_key'] : [];
+        $secret_key = isset($stripeConfig['secret_key']) && is_string($stripeConfig['secret_key']) ? $stripeConfig['secret_key'] : '';
+        $test_key = isset($stripeConfig['test_key']) && is_string($stripeConfig['test_key']) ? $stripeConfig['test_key'] : '';
 
         $container->set(StripeClient::class, fn() => new StripeClient($secret_key));
         $container->set('stripe_client_test', fn() => new StripeClient($test_key));

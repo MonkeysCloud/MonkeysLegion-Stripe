@@ -172,7 +172,6 @@ class WebhookControllerTest extends TestCase
             ->will(new ConsecutiveCalls(
                 [
                     $this->throwException(new RateLimitException('Rate limited', 429)),
-                    // $this->throwException(new RateLimitException('Rate limited', 429)),
                     json_decode($payload, true) // must be actual array, not closure
                 ]
             ));

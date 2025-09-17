@@ -26,7 +26,7 @@ abstract class StripeWrapper
         $this->logger = $logger;
     }
 
-    public function getStripeClient(): StripeClient
+    public function getStripeClient(): ?StripeClient
     {
         return $this->stripe;
     }
