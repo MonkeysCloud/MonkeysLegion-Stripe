@@ -17,6 +17,7 @@ interface ProdcutInterface
      * Retrieve a product by its ID.
      *
      * @param string $productId The ID of the product to retrieve.
+     * @param array<string, mixed> $options Optional parameters for retrieval.
      * @return \Stripe\Product
      * @throws \Exception if the retrieval fails
      */
@@ -36,6 +37,7 @@ interface ProdcutInterface
      * Delete a product.
      *
      * @param string $productId The ID of the product to delete.
+     * @param array<string, mixed> $options Optional parameters for deletion.
      * @return \Stripe\Product
      * @throws \Exception if the deletion fails
      */
@@ -55,7 +57,7 @@ interface ProdcutInterface
      *
      * @param string $query The search query.
      * @param array<string, mixed> $params Optional parameters for the search.
-     * @return \Stripe\Collection<\Stripe\Product>
+     * @return \Stripe\SearchResult<\Stripe\Product>
      * @throws \Exception if the search fails
      */
     public function searchProducts(string $query, array $params = []): \Stripe\SearchResult;

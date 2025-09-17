@@ -2,13 +2,9 @@
 
 namespace MonkeysLegion\Stripe\Provider;
 
-define('STRIPE_CONFIG_PATH', WORKING_DIRECTORY . '/config/stripe.' . ($_ENV['APP_ENV'] ?? 'dev') . '.php');
-define('STRIPE_CONFIG_DEFAULT_PATH', __DIR__ . '/../../config/stripe.php');
-define('DB_CONFIG_PATH', WORKING_DIRECTORY . '/../config/database.php');
-define('DB_CONFIG_DEFAULT_PATH', __DIR__ . '/../../config/database.php');
-
 use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use MonkeysLegion\Core\Logger\MonkeyLogger;
+use MonkeysLegion\Core\Provider\ProviderInterface;
 use MonkeysLegion\Database\MySQL\Connection;
 use MonkeysLegion\DI\ContainerBuilder;
 use MonkeysLegion\Query\QueryBuilder;
@@ -19,29 +15,33 @@ use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 use MonkeysLegion\Stripe\Webhook\WebhookController;
 use Stripe\StripeClient;
 
-class StripeServiceProvider
+class StripeServiceProvider implements ProviderInterface
 {
     public function __construct() {}
 
-    /**
-     * Register the services provided by this provider.
-     * @return array<string, callable>
-     */
-    public static function register(ContainerBuilder $c): void
+    public static function register(string $root, ContainerBuilder $c): void
     {
         $in_container = ServiceContainer::getInstance();
         /** @var FrameworkLoggerInterface $logger */
         $logger = $in_container->get(FrameworkLoggerInterface::class) ?? new MonkeyLogger();
 
         try {
+            $stripeConfigPath = $root . '/config/stripe.php';
+            $stripeConfigDefaultPath = __DIR__ . '/../../config/stripe.php';
+            $dbConfigPath = $root . '/../config/database.php';
+            $dbConfigDefaultPath = __DIR__ . '/../../config/database.php';
+
             // Load stripe configurations
-            $stripeConfig = file_exists(STRIPE_CONFIG_PATH) ? require STRIPE_CONFIG_PATH : [];
-            $defaults = file_exists(STRIPE_CONFIG_DEFAULT_PATH) ? require STRIPE_CONFIG_DEFAULT_PATH : [];
+            $stripeConfig = self::require($stripeConfigPath);
+            $defaults = self::require($stripeConfigDefaultPath);
+            /** @var array<string, mixed> $mergedStripeConfig */
             $mergedStripeConfig = array_replace_recursive($defaults, $stripeConfig);
 
+
             // Load Database configurations
-            $dbConfig = file_exists(DB_CONFIG_PATH) ? require DB_CONFIG_PATH : [];
-            $dbDefaults = file_exists(DB_CONFIG_DEFAULT_PATH) ? require DB_CONFIG_DEFAULT_PATH : [];
+            $dbConfig = self::require($dbConfigPath);
+            $dbDefaults = self::require($dbConfigDefaultPath);
+            /** @var array<string, mixed> $mergedDbConfig */
             $mergedDbConfig = array_replace_recursive($dbDefaults, $dbConfig);
 
             // set configurations in the ServiceContainer
@@ -73,52 +73,97 @@ class StripeServiceProvider
 
     /**
      * Register database-related services
+     *
+     * @param ServiceContainer $container
+     * @param array<string, mixed> $dbConfig
      */
     private static function registerDatabaseServices(ServiceContainer $container, array $dbConfig): void
     {
         $container->set(Connection::class, fn() => new Connection($dbConfig));
-        $container->set(QueryBuilder::class, fn() => new QueryBuilder($container->get(Connection::class)));
+
+        /** @var Connection $conn */
+        $conn = $container->get(Connection::class);
+        $container->set(QueryBuilder::class, fn() => new QueryBuilder($conn));
     }
 
     /**
      * Register Stripe client instances
+     *
+     * @param ServiceContainer $container
+     * @param array<string, mixed> $stripeConfig
      */
     private static function registerStripeClients(ServiceContainer $container, array $stripeConfig): void
     {
-        $container->set(StripeClient::class, fn() => new StripeClient($stripeConfig['secret_key']));
-        $container->set('stripe_client_test', fn() => new StripeClient($stripeConfig['test_key']));
+        $secret_key = isset($stripeConfig['secret_key']) && is_string($stripeConfig['secret_key']) ? $stripeConfig['secret_key'] : [];
+        $test_key = isset($stripeConfig['test_key']) && is_string($stripeConfig['test_key']) ? $stripeConfig['test_key'] : [];
+
+        $container->set(StripeClient::class, fn() => new StripeClient($secret_key));
+        $container->set('stripe_client_test', fn() => new StripeClient($test_key));
     }
 
     /**
      * Register webhook and idempotency services
+     *
+     * @param ServiceContainer $container
+     * @param array<string, mixed> $stripeConfig
+     * @param FrameworkLoggerInterface $logger
      */
     private static function registerWebhookServices(
         ServiceContainer $container,
         array $stripeConfig,
         FrameworkLoggerInterface $logger
     ): void {
+        // Register MemoryIdempotencyStore
         $container->set(MemoryIdempotencyStore::class, function () use ($container) {
             $appEnv = $_ENV['APP_ENV'] ?? 'dev';
+            /** @var QueryBuilder $qb */
+            $qb = $container->get(QueryBuilder::class);
+
             return match ($appEnv) {
-                'prod', 'production' => new MemoryIdempotencyStore($container->get(QueryBuilder::class)),
-                default => new MemoryIdempotencyStore()
+                'prod', 'production' => new MemoryIdempotencyStore($qb),
+                default => new MemoryIdempotencyStore(),
             };
         });
 
-        $container->set(WebhookMiddleware::class, fn() => new WebhookMiddleware(
-            array_intersect_key($stripeConfig, array_flip(['webhook_secret', 'webhook_secret_test'])),
-            $stripeConfig['webhook_tolerance'],
-            $container->get(MemoryIdempotencyStore::class),
-            $stripeConfig['webhook_default_ttl'],
-            true
-        ));
+        // Ensure endpoint secrets exist and are arrays
+        $keys = [
+            'webhook_secret'      => $stripeConfig['webhook_secret'] ?? throw new \RuntimeException('Missing webhook_secret in config'),
+            'webhook_secret_test' => $stripeConfig['webhook_secret_test'] ?? throw new \RuntimeException('Missing webhook_secret_test in config'),
+        ];
 
-        $container->set(WebhookController::class, fn() => new WebhookController(
-            $container->get(WebhookMiddleware::class),
-            $container->get(MemoryIdempotencyStore::class),
-            $container,
-            $logger
-        ));
+        $webhook_tolerance = (int) ($stripeConfig['webhook_tolerance'] ?? 300);
+        $webhook_default_ttl = isset($stripeConfig['webhook_default_ttl'])
+            ? (int) $stripeConfig['webhook_default_ttl']
+            : 172800; // default 48 hours
+
+        // Register WebhookMiddleware
+        $container->set(WebhookMiddleware::class, function () use ($container, $keys, $webhook_tolerance, $webhook_default_ttl) {
+            /** @var MemoryIdempotencyStore $idempotencyStore */
+            $idempotencyStore = $container->get(MemoryIdempotencyStore::class);
+
+            return new WebhookMiddleware(
+                $keys,                  // endpoint secrets as array
+                $webhook_tolerance,     // int
+                $idempotencyStore,      // store
+                $webhook_default_ttl,   // TTL
+                true                    // test mode
+            );
+        });
+
+        // Register WebhookController
+        $container->set(WebhookController::class, function () use ($container, $logger) {
+            /** @var WebhookMiddleware $webhookMiddleware */
+            $webhookMiddleware = $container->get(WebhookMiddleware::class);
+            /** @var MemoryIdempotencyStore $idempotencyStore */
+            $idempotencyStore = $container->get(MemoryIdempotencyStore::class);
+
+            return new WebhookController(
+                $webhookMiddleware,
+                $idempotencyStore,
+                $container,
+                $logger
+            );
+        });
     }
 
     /**
@@ -157,6 +202,7 @@ class StripeServiceProvider
             Connection::class,
             QueryBuilder::class,
             StripeClient::class,
+            'stripe_client_test',
             MemoryIdempotencyStore::class,
             WebhookMiddleware::class,
             WebhookController::class,
@@ -175,9 +221,23 @@ class StripeServiceProvider
         $builder->addDefinitions($definitions);
     }
 
-    public static function setLogger(MonkeyLogger $logger): void
+    public static function setLogger(FrameworkLoggerInterface $logger): void
     {
         $container = ServiceContainer::getInstance();
         $container->set(FrameworkLoggerInterface::class, fn() => $logger);
+    }
+
+    /**
+     * Require a PHP file and return its returned array.
+     *
+     * @param string $path
+     * @return array<mixed>
+     */
+    private static function require(string $path): array
+    {
+        if (!file_exists($path)) return [];
+        $content = require $path;
+
+        return is_array($content) ? $content : [];
     }
 }

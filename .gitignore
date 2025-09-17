@@ -27,7 +27,7 @@
 
 # PHPUnit and test artifacts
 /phpunit.xml
-/phpunit.result.cache
+/.phpunit.cache
 
 # OS-specific files
 .DS_Store

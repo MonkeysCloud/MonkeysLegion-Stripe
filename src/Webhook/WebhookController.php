@@ -38,12 +38,12 @@ class WebhookController extends Controller
         $this->webhookMiddleware = $webhookMiddleware;
         $this->idempotencyStore = $idempotencyStore;
         $this->logger = $logger ?? null;
-        $config = $c->getConfig('stripe') ?? [];
-        $this->timeout = $config['timeout'] ?? $this->timeout;
-        $this->retries = $config['webhook_retries'] ?? $this->retries;
-        $this->backoff = $config['backoff'] ?? $this->backoff;
-        $this->maxPayloadSize = $config['max_payload_size'] ?? $this->maxPayloadSize;
-        $this->prod_mode = isset($_ENV['APP_ENV']) && strpos($_ENV['APP_ENV'], 'prod') !== false;
+        $config = $c->getConfig('stripe');
+        $this->timeout = is_numeric($config['timeout']) ? (int)$config['timeout'] : $this->timeout;
+        $this->retries = is_numeric($config['webhook_retries']) ? (int)$config['webhook_retries'] : $this->retries;
+        $this->backoff = isset($config['backoff']) && is_numeric($config['backoff']) ? (int)$config['backoff'] : $this->backoff;
+        $this->maxPayloadSize = is_numeric($config['max_payload_size']) ? (int)$config['max_payload_size'] : $this->maxPayloadSize;
+        $this->prod_mode = isset($_ENV['APP_ENV']) && is_string($_ENV['APP_ENV']) && strpos($_ENV['APP_ENV'], 'prod') !== false;
     }
 
     public function setLogger(FrameworkLoggerInterface $logger): void
@@ -108,24 +108,6 @@ class WebhookController extends Controller
                     $this->logger?->error("WebhookController: " . $errorMsg . $e->getMessage());
                     throw new \RuntimeException($errorMsg . $e->getMessage(), $e->getCode(), $e);
                 }
-            } catch (CardException $e) {
-                // No retry for card errors
-                $this->logger?->error("WebhookController: Card error occurred", [
-                    'error' => $e->getError()->message
-                ]);
-                throw new \RuntimeException('Card error occurred: ' . $e->getMessage(), $e->getCode(), $e);
-            } catch (InvalidRequestException $e) {
-                // No retry for invalid requests
-                $this->logger?->error("WebhookController: Invalid request", [
-                    'error' => $e->getMessage()
-                ]);
-                throw new \RuntimeException('Invalid request: ' . $e->getMessage(), $e->getCode(), $e);
-            } catch (AuthenticationException $e) {
-                // No retry for authentication errors
-                $this->logger?->error("WebhookController: Authentication failed", [
-                    'error' => $e->getMessage()
-                ]);
-                throw new \RuntimeException('Authentication failed: ' . $e->getMessage(), $e->getCode(), $e);
             } catch (\Exception $e) {
                 // No retry for unexpected errors
                 $this->logger?->error("WebhookController : An unexpected error occurred", [

@@ -9,7 +9,7 @@ use RuntimeException;
 
 abstract class StripeWrapper
 {
-    protected StripeClient $stripe;
+    protected ?StripeClient $stripe;
     protected array $stripeClients;
     protected bool $test_mode = true;
     private ?FrameworkLoggerInterface $logger;
@@ -18,12 +18,17 @@ abstract class StripeWrapper
     {
         $this->stripeClients = $stripeClients;
         $this->setTestMode($test_mode);
-        $this->logger = $logger ?? null;
+        $this->logger = $logger;
     }
 
     public function setLogger(FrameworkLoggerInterface $logger): void
     {
         $this->logger = $logger;
+    }
+
+    public function getStripeClient(): StripeClient
+    {
+        return $this->stripe;
     }
 
     /**
@@ -34,11 +39,16 @@ abstract class StripeWrapper
     public function setTestMode(bool $test_mode): void
     {
         $this->test_mode = $test_mode;
-        if (!isset($this->stripeClients[(int) $this->test_mode])) {
-            throw new \RuntimeException("Stripe client for " . ($this->test_mode ? 'test' : 'live') . " mode is not defined.");
+
+        // Only set $stripe if a client exists for this mode
+        if (isset($this->stripeClients[(int)$this->test_mode])) {
+            $this->stripe = $this->stripeClients[(int)$this->test_mode];
+        } else {
+            // Optional: reset $stripe to null if no client is defined
+            $this->stripe = null;
         }
-        $this->stripe = $this->stripeClients[(int) $this->test_mode];
     }
+
     /**
      * @template T
      * @param callable(): T $callback
@@ -90,5 +100,12 @@ abstract class StripeWrapper
             }
         }
         throw new \InvalidArgumentException("At least one of the following parameters is required: " . implode(', ', $oneOf));
+    }
+
+    protected function ensureStripeClient(): void
+    {
+        if (!$this->stripe) {
+            throw new \RuntimeException("Stripe client is not initialized.");
+        }
     }
 }

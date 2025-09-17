@@ -8,8 +8,9 @@ use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 
 class WebhookMiddleware
 {
+    /** @var array<string, string> */
     private array $endpointSecrets;
-    private ?string $endpointSecret;
+    private string $endpointSecret;
     private int $tolerance;
     private MemoryIdempotencyStore $idempotencyStore;
     private ?int $defaultTtl;
@@ -17,6 +18,15 @@ class WebhookMiddleware
     private const TEST_SECRET_KEY = 'webhook_secret_test';
     private const LIVE_SECRET_KEY = 'webhook_secret';
 
+    /**
+     * WebhookMiddleware constructor.
+     *
+     * @param array<string, string> $endpointSecrets
+     * @param int $tolerance
+     * @param MemoryIdempotencyStore $idempotencyStore
+     * @param int|null $defaultTtl
+     * @param bool $testMode
+     */
     public function __construct(
         array $endpointSecrets,
         int $tolerance,
@@ -48,19 +58,18 @@ class WebhookMiddleware
         $this->endpointSecret = $this->endpointSecrets[$key_name];
     }
 
-
     /**
      * Verify webhook signature and handle idempotency
      *
      * @param string $payload Raw request body
      * @param string $sigHeader Stripe-Signature header
-     * @return array Verified webhook event data
+     * @return array<string, mixed> Verified webhook event data
      * @throws SignatureVerificationException
      * @throws \InvalidArgumentException
      */
     public function verifyAndProcess(string $payload, string $sigHeader): array
     {
-        // // First verify signature - this will throw if verification fails
+        // First verify signature - this will throw if verification fails
         $event = $this->verifySignature($payload, $sigHeader);
 
         // Only check idempotency for successfully verified events
@@ -79,7 +88,7 @@ class WebhookMiddleware
      *
      * @param string $payload Raw request body
      * @param string $sigHeader Stripe-Signature header
-     * @return array Webhook event data
+     * @return array<string, mixed> Webhook event data
      * @throws SignatureVerificationException
      */
     public function verifySignature(string $payload, string $sigHeader): array
@@ -92,7 +101,9 @@ class WebhookMiddleware
                 $this->tolerance
             );
 
-            return $event->toArray();
+            /** @var array<string, mixed> $eventArr */
+            $eventArr = $event->toArray();
+            return $eventArr;
         } catch (SignatureVerificationException $e) {
             throw new SignatureVerificationException(
                 'Webhook signature verification failed: ' . $e->getMessage(),
@@ -132,5 +143,10 @@ class WebhookMiddleware
     public function getTolerance(): int
     {
         return $this->tolerance;
+    }
+
+    public function getEndPointSecret(): string
+    {
+        return $this->endpointSecret;
     }
 }

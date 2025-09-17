@@ -11,7 +11,9 @@ class SQLiteStore implements IdempotencyStoreInterface
 
     public function __construct(?string $dbPath = null)
     {
-        $this->dbPath = $dbPath ?? realpath(__DIR__ . '/../../../database/idempotency_store.sqlite');
+        $resolved = $dbPath ?? realpath(__DIR__ . '/../../../database/idempotency_store.sqlite');
+        if (!$resolved) throw new \RuntimeException('Database path could not be resolved.');
+        $this->dbPath = $resolved;
         $this->pdo = new \PDO("sqlite:{$this->dbPath}");
         $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $this->createTable();
@@ -41,6 +43,13 @@ class SQLiteStore implements IdempotencyStoreInterface
         return $stmt->fetch() !== false;
     }
 
+    /**
+     * Mark an event as processed
+     *
+     * @param string $eventId Stripe event ID
+     * @param int|null $ttl Time-to-live for the event
+     * @param array<string, mixed> $eventData Additional event data
+     */
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void
     {
         $expiry = $ttl ? date('Y-m-d H:i:s', time() + $ttl) : null;
@@ -53,7 +62,7 @@ class SQLiteStore implements IdempotencyStoreInterface
             $eventId,
             date('Y-m-d H:i:s'),
             $expiry,
-            json_encode($eventData)
+            json_encode($eventData, JSON_THROW_ON_ERROR)
         ]);
     }
 
@@ -73,16 +82,30 @@ class SQLiteStore implements IdempotencyStoreInterface
         $this->pdo->exec("DELETE FROM idempotency_store WHERE expiry IS NOT NULL AND expiry < datetime('now')");
     }
 
+    /**
+     * Get all processed events
+     *
+     * @return array<int, array<mixed>> List of processed events
+     */
     public function getAllEvents(): array
     {
         $stmt = $this->pdo->query("SELECT data FROM idempotency_store WHERE data IS NOT NULL");
+        if (!$stmt) {
+            throw new \RuntimeException('Failed to retrieve processed events.');
+        }
+
         $events = [];
+
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $data = json_decode($row['data'], true);
+            $data = is_array($row) && isset($row['data']) && is_string($row['data'])
+                ? json_decode($row['data'], true)
+                : null;
+
             if (is_array($data)) {
                 $events[] = $data;
             }
         }
+
         return $events;
     }
 }

@@ -13,6 +13,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
         }
 
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->create($params);
         });
     }
@@ -21,6 +22,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function retrieveSetupIntent(string $setupIntentId): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->retrieve($setupIntentId);
         });
     }
@@ -28,6 +30,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function confirmSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->confirm($setupIntentId, $params ?: null);
         });
     }
@@ -35,6 +38,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function cancelSetupIntent(string $setupIntentId): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->cancel($setupIntentId);
         });
     }
@@ -42,6 +46,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function listSetupIntents(array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->all($params ?: null);
         });
     }
@@ -49,6 +54,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function updateSetupIntent(string $setupIntentId, array $params): \Stripe\SetupIntent
     {
         return $this->handle(function () use ($setupIntentId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->setupIntents->update($setupIntentId, $params ?: null);
         });
     }
@@ -56,6 +62,7 @@ class SetupIntentService extends StripeWrapper implements SetupIntentServiceInte
     public function isValidSetupIntent(string $setupIntentId): bool
     {
         return $this->handle(function () use ($setupIntentId) {
+            $this->ensureStripeClient();
             $setupIntent = $this->stripe->setupIntents->retrieve($setupIntentId);
             return $setupIntent->status === 'succeeded';
         });

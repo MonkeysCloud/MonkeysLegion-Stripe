@@ -25,7 +25,7 @@ class MySQLStore implements IdempotencyStoreInterface
             ->where('event_id', '=', $eventId)
             ->fetch();
 
-        if ($result && (!isset($result->expiry) || strtotime($result->expiry) > time())) {
+        if ($result && (!isset($result->expiry) || !is_string($result->expiry) || strtotime($result->expiry) > time())) {
             return true;
         }
         return false;
@@ -33,6 +33,10 @@ class MySQLStore implements IdempotencyStoreInterface
 
     /**
      * Mark an event as processed with optional TTL
+     *
+     * @param string $eventId Stripe event ID
+     * @param int|null $ttl Time-to-live for the event
+     * @param array<string, mixed> $eventData Additional event data
      */
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void
     {
@@ -90,6 +94,8 @@ class MySQLStore implements IdempotencyStoreInterface
 
     /**
      * Get all processed events (for demo/debugging purposes)
+     *
+     * @return array<int, mixed> List of processed events
      */
     public function getAllEvents(): array
     {
@@ -100,7 +106,7 @@ class MySQLStore implements IdempotencyStoreInterface
 
         $events = [];
         foreach ($rows as $row) {
-            if (isset($row->data)) {
+            if (is_object($row) && isset($row->data)) {
                 $data = is_string($row->data) ? json_decode($row->data, true) : (array)($row->data ?? []);
                 if (is_array($data)) {
                     $events[] = $data;

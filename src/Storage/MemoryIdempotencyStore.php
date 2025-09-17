@@ -31,6 +31,10 @@ class MemoryIdempotencyStore implements IdempotencyStoreInterface
 
     /**
      * Mark an event as processed with optional TTL
+     *
+     * @param string $eventId Stripe event ID
+     * @param int|null $ttl Time-to-live for the event
+     * @param array<string, mixed> $eventData Additional event data
      */
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void
     {
@@ -63,6 +67,8 @@ class MemoryIdempotencyStore implements IdempotencyStoreInterface
 
     /**
      * Get all processed events (for demo/debugging purposes)
+     *
+     * @return array<int, mixed> List of processed events
      */
     public function getAllEvents(): array
     {
