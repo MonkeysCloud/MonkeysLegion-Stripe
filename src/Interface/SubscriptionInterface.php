@@ -19,6 +19,7 @@ interface SubscriptionInterface
      * Retrieve a subscription by its ID.
      *
      * @param string $subscriptionId The ID of the subscription to retrieve.
+     * @param array<string, mixed> $options Optional parameters for retrieval.
      * @return \Stripe\Subscription
      * @throws \Exception if the retrieval fails
      */
@@ -66,7 +67,7 @@ interface SubscriptionInterface
      * Search for subscriptions using a query.
      *
      * @param array<string, mixed> $params The search parameters, including the query string.
-     * @return \Stripe\SearchResult
+     * @return \Stripe\SearchResult<\Stripe\Subscription>
      * @throws \Exception if the search fails
      */
     public function searchSubscriptions(array $params): \Stripe\SearchResult;

@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 
-require_once __DIR__ . '/../src/Template/helpers.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Stripe\Webhook;
 use Stripe\Exception\SignatureVerificationException;
@@ -34,7 +34,7 @@ class KeyHelper
     ];
 
     private string $keyFile;
-    private string $stage = 'dev'; // Default stage
+    private string $stage = ''; // Default stage
 
     public function __construct(array $argv)
     {
@@ -43,15 +43,18 @@ class KeyHelper
             if (str_starts_with($arg, '--stage=')) {
                 $this->stage = substr($arg, 8);
                 if (!in_array($this->stage, ['dev', 'prod', 'test'])) {
-                    throw new InvalidArgumentException("Invalid stage: {$this->stage}. Allowed values are: dev, prod, test.");
+                    throw new InvalidArgumentException(
+                        "Invalid stage: {$this->stage}. Allowed values are: dev, prod, test."
+                    );
                 }
                 break;
             }
         }
 
-        // Construct the full path to the .env.<stage> file
-        $this->keyFile = WORKING_DIRECTORY . '/.env.' . $this->stage;
+        // If no stage provided, default to .env only
+        $this->keyFile = getcwd() . ($this->stage ? self::KEY_FILE_NAME . '.' . $this->stage : self::KEY_FILE_NAME);
     }
+
     /**
      * Generate a cryptographically secure random key
      * 
@@ -401,7 +404,7 @@ class KeyHelper
         // Check if webhook secret is configured
         $webhookSecret = $this->readKey('STRIPE_WEBHOOK_SECRET');
         if ($webhookSecret === null) {
-            echo "❌ STRIPE_WEBHOOK_SECRET not found in .env." . $this->stage . " file" . PHP_EOL;
+            echo "❌ STRIPE_WEBHOOK_SECRET not found in " . $this->keyFile . " file" . PHP_EOL;
             echo "HTTP Status: N/A" . PHP_EOL;
             echo "Process Time: N/A" . PHP_EOL;
             return;

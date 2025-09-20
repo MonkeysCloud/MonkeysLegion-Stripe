@@ -17,6 +17,7 @@ interface IdempotencyStoreInterface
      *
      * @param string $eventId Stripe event ID
      * @param int|null $ttl Time to live in seconds (optional)
+     * @param array<string, mixed> $eventData Optional event data to store
      * @return void
      */
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void;
@@ -46,7 +47,7 @@ interface IdempotencyStoreInterface
     /**
      * Get all processed events (for demo/debugging purposes)
      *
-     * @return array
+     * @return array<int, mixed> List of processed events
      */
     public function getAllEvents(): array;
 }

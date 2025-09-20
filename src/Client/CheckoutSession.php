@@ -11,6 +11,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
         $this->validateRequired($params, ['line_items', 'mode']);
 
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->checkout->sessions->create($params);
         });
     }
@@ -18,6 +19,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function retrieveCheckoutSession(string $sessionId): \Stripe\Checkout\Session
     {
         return $this->handle(function () use ($sessionId) {
+            $this->ensureStripeClient();
             return $this->stripe->checkout->sessions->retrieve($sessionId);
         });
     }
@@ -25,6 +27,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function listCheckoutSessions(array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->checkout->sessions->all($params ?: null);
         });
     }
@@ -32,6 +35,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function expireCheckoutSession(string $sessionId): \Stripe\Checkout\Session
     {
         return $this->handle(function () use ($sessionId) {
+            $this->ensureStripeClient();
             return $this->stripe->checkout->sessions->expire($sessionId);
         });
     }
@@ -39,6 +43,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function listLineItems(string $sessionId, array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($sessionId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->checkout->sessions->allLineItems($sessionId, $params ?: null);
         });
     }
@@ -52,6 +57,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function isValidCheckoutSession(string $sessionId): bool
     {
         return $this->handle(function () use ($sessionId) {
+            $this->ensureStripeClient();
             $session = $this->stripe->checkout->sessions->retrieve($sessionId);
             return in_array($session->status, ['complete', 'open']);
         });
@@ -60,6 +66,7 @@ class CheckoutSession extends StripeWrapper implements CheckoutSessionInterface
     public function isExpiredCheckoutSession(string $sessionId): bool
     {
         return $this->handle(function () use ($sessionId) {
+            $this->ensureStripeClient();
             $session = $this->stripe->checkout->sessions->retrieve($sessionId);
             return $session->status === 'expired';
         });

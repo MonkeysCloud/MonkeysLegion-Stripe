@@ -9,8 +9,13 @@ class ServiceContainer
 {
     private static ?ServiceContainer $instance = null;
 
+    /** @var array<string, mixed> */
     private array $instances = [];
+
+    /** @var array<string, callable> */
     private array $factories = [];
+
+    /** @var array<string, mixed> */
     private array $config = [];
 
     private function __construct() {}
@@ -62,7 +67,7 @@ class ServiceContainer
 
     /**
      *  Set configuration for a service.
-     *  @param array $config The configuration array.
+     *  @param array<string, mixed> $config The configuration array.
      *  @param string $name The name of the service.
      * @return void
      */
@@ -75,10 +80,12 @@ class ServiceContainer
      * Get configuration for a service.
      *
      * @param string $name The name of the service.
-     * @return array The configuration array.
+     * @return array<string, mixed> The configuration array.
      */
     public function getConfig(string $name): array
     {
-        return $this->config[$name] ?? [];
+        /** @var array<string, mixed> */
+        $config = $this->config[$name] ?? [];
+        return $config;
     }
 }

@@ -25,25 +25,25 @@ return [
     'currency'        => $_ENV['STRIPE_CURRENCY'] ?? 'usd',
 
     // The maximum amount (in smallest currency unit) allowed per transaction.
-    'currency_limit'  => (int)($_ENV['STRIPE_CURRENCY_LIMIT'] ?? 100000), // 100000 cents = $1,000.00
+    'currency_limit'  => $_ENV['STRIPE_CURRENCY_LIMIT'] ?? 100000, // 100000 cents = $1,000.00
 
     // The time tolerance (in seconds) for validating webhook signatures.
-    'webhook_tolerance' => (int)($_ENV['STRIPE_WEBHOOK_TOLERANCE'] ?? 20),
+    'webhook_tolerance' => $_ENV['STRIPE_WEBHOOK_TOLERANCE'] ?? 20,
 
     // The default time-to-live (in seconds) for webhook events.
-    'webhook_default_ttl' => (int)($_ENV['STRIPE_WEBHOOK_DEFAULT_TTL'] ?? 172800),
+    'webhook_default_ttl' => $_ENV['STRIPE_WEBHOOK_DEFAULT_TTL'] ?? 172800,
 
     // The database table used for storing idempotency events.
     'idempotency_table' => $_ENV['STRIPE_IDEMPOTENCY_TABLE'] ?? 'stripe_memory',
 
     // The timeout (in seconds) for Stripe API requests.
-    'timeout' => (int)($_ENV['STRIPE_TIMEOUT'] ?? 60),
+    'timeout' => $_ENV['STRIPE_TIMEOUT'] ?? 60,
 
     // The maximum number of retries for failed webhook events.
-    'webhook_retries' => (int)($_ENV['STRIPE_WEBHOOK_RETRIES'] ?? 3),
+    'webhook_retries' => $_ENV['STRIPE_WEBHOOK_RETRIES'] ?? 3,
 
     // Payload size limit for webhook events.
-    'max_payload_size' => (int)($_ENV['STRIPE_MAX_PAYLOAD_SIZE'] ?? 128 * 1024), // 128 KB
+    'max_payload_size' => $_ENV['STRIPE_MAX_PAYLOAD_SIZE'] ?? 128 * 1024, // 128 KB
 
     // The URL for Stripe's API endpoint.
     'api_url' => $_ENV['STRIPE_API_URL'] ?? 'https://api.stripe.com',

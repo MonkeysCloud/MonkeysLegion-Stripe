@@ -10,6 +10,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function createProduct(array $params): \Stripe\Product
     {
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->products->create($params);
         });
     }
@@ -17,6 +18,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function retrieveProduct(string $productId, array $params = []): \Stripe\Product
     {
         return $this->handle(function () use ($productId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->products->retrieve($productId, $params);
         });
     }
@@ -24,6 +26,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function updateProduct(string $productId, array $params): \Stripe\Product
     {
         return $this->handle(function () use ($productId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->products->update($productId, $params);
         });
     }
@@ -31,6 +34,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function deleteProduct(string $productId, array $options = []): \Stripe\Product
     {
         return $this->handle(function () use ($productId, $options) {
+            $this->ensureStripeClient();
             return $this->stripe->products->delete($productId, $options);
         });
     }
@@ -38,6 +42,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function listProducts(array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->products->all($params ?: null);
         });
     }
@@ -45,6 +50,7 @@ class Product extends StripeWrapper implements ProdcutInterface
     public function searchProducts(string $query, array $params = []): \Stripe\SearchResult
     {
         return $this->handle(function () use ($query, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->products->search(array_merge(['query' => $query], $params ?: []));
         });
     }

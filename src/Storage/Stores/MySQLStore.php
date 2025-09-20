@@ -2,16 +2,17 @@
 
 namespace MonkeysLegion\Stripe\Storage\Stores;
 
+use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Interface\IdempotencyStoreInterface;
 
-class MySQLStore implements IdempotencyStoreInterface
+class MySQLStore extends AbstractStore implements IdempotencyStoreInterface
 {
-    private QueryBuilder $queryBuilder;
-
-    public function __construct(QueryBuilder $queryBuilder)
+    public function __construct(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', private ?FrameworkLoggerInterface $logger = null)
     {
         $this->queryBuilder = $queryBuilder;
+        $this->tableName = $tableName;
+        $this->createTable();
     }
 
     /**
@@ -21,11 +22,11 @@ class MySQLStore implements IdempotencyStoreInterface
     {
         $result = $this->queryBuilder
             ->select()
-            ->from('idempotency_store')
+            ->from($this->tableName)
             ->where('event_id', '=', $eventId)
             ->fetch();
 
-        if ($result && (!isset($result->expiry) || strtotime($result->expiry) > time())) {
+        if ($result && (!isset($result->expiry) || !is_string($result->expiry) || strtotime($result->expiry) > time())) {
             return true;
         }
         return false;
@@ -33,6 +34,10 @@ class MySQLStore implements IdempotencyStoreInterface
 
     /**
      * Mark an event as processed with optional TTL
+     *
+     * @param string $eventId Stripe event ID
+     * @param int|null $ttl Time-to-live for the event
+     * @param array<string, mixed> $eventData Additional event data
      */
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void
     {
@@ -45,13 +50,13 @@ class MySQLStore implements IdempotencyStoreInterface
             'data' => json_encode($eventData, JSON_THROW_ON_ERROR)
         ];
 
-        $insertId = $this->queryBuilder->insert('idempotency_store', $eventRow);
+        $insertId = $this->queryBuilder->insert($this->tableName, $eventRow);
 
         // Debug: log insert result
         if (!$insertId) {
-            error_log("Failed to insert event into idempotency_store: " . json_encode($eventRow));
+            $this->logger?->error("Failed to insert event into idempotency_store: ", $eventRow);
         } else {
-            error_log("Inserted event into idempotency_store with ID: $insertId and event_id: $eventId");
+            $this->logger?->info("Inserted event into idempotency_store with ID: $insertId and event_id: $eventId");
         }
     }
 
@@ -61,7 +66,7 @@ class MySQLStore implements IdempotencyStoreInterface
     public function removeEvent(string $eventId): void
     {
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->where('event_id', '=', $eventId)
             ->execute();
     }
@@ -72,7 +77,7 @@ class MySQLStore implements IdempotencyStoreInterface
     public function clearAll(): void
     {
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->execute();
     }
 
@@ -83,24 +88,26 @@ class MySQLStore implements IdempotencyStoreInterface
     {
         $now = time();
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->where('expiry', '<', $now)
             ->execute();
     }
 
     /**
      * Get all processed events (for demo/debugging purposes)
+     *
+     * @return array<int, mixed> List of processed events
      */
     public function getAllEvents(): array
     {
         $rows = $this->queryBuilder
             ->select()
-            ->from('idempotency_store')
+            ->from($this->tableName)
             ->fetchAll();
 
         $events = [];
         foreach ($rows as $row) {
-            if (isset($row->data)) {
+            if (is_object($row) && isset($row->data)) {
                 $data = is_string($row->data) ? json_decode($row->data, true) : (array)($row->data ?? []);
                 if (is_array($data)) {
                     $events[] = $data;

@@ -8,7 +8,6 @@ use FilesystemIterator;
 use MonkeysLegion\Cli\Console\Attributes\Command as CommandAttr;
 use MonkeysLegion\Cli\Console\Command;
 use MonkeysLegion\Cli\Command\MakerHelpers;
-use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
@@ -33,9 +32,6 @@ final class StripeInstallCommand extends Command
             "{$stubDir}/Controller/WebhookController.php"               => "{$projectRoot}/app/Controller/WebhookController.php",
             "{$stubDir}/config/stripe.php"                              => "{$projectRoot}/config/stripe.php",
             "{$stubDir}/config/stripe.mlc"                              => "{$projectRoot}/config/stripe.mlc",
-            "{$stubDir}/config/stripe/stripe.dev.php"                   => "{$projectRoot}/config/stripe.dev.php",
-            "{$stubDir}/config/stripe/stripe.prod.php"                  => "{$projectRoot}/config/stripe.prod.php",
-            "{$stubDir}/config/stripe/stripe.test.php"                  => "{$projectRoot}/config/stripe.test.php",
             "{$stubDir}/public/assets/css/app.css"                      => "{$projectRoot}/public/assets/css/app.css",
             "{$stubDir}/resources/views/components/nav-bar.ml.php"      => "{$projectRoot}/resources/views/components/nav-bar.ml.php",
             "{$stubDir}/resources/views/docs/checkout-session.ml.php"   => "{$projectRoot}/resources/views/docs/checkout-session.ml.php",
@@ -50,7 +46,7 @@ final class StripeInstallCommand extends Command
         foreach ($map as $from => $to) {
             if (is_dir($from)) {
                 $this->mirror($from, $to);
-                $this->info('✓ Published directory ' . str_replace($projectRoot . '/', '', $to));
+                $this->info('✓ Published directory ' . str_replace($projectRoot . '/', '', $to . "\n"));
                 continue;
             }
 
@@ -59,7 +55,7 @@ final class StripeInstallCommand extends Command
             }
 
             $this->copyFile($from, $to);
-            $this->info('✓ Published file ' . str_replace($projectRoot . '/', '', $to));
+            $this->info('✓ Published file ' . str_replace($projectRoot . '/', '', $to . "\n"));
         }
 
         // 2) Ensure .env contains Stripe keys
@@ -71,10 +67,7 @@ final class StripeInstallCommand extends Command
         // 4) Patch config/app.mlc: add stripe { … } section
         $this->addStripeConfig($projectRoot);
 
-        // 5) Patch config/app.php: add WebhookMiddleware binding
-        $this->addWebhookBinding($projectRoot);
-
-        // 6) Add StripeServiceProvider to composer.json
+        // 5) Add StripeServiceProvider to composer.json
         $this->addServiceProviderToComposer($projectRoot);
 
         $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
@@ -94,7 +87,12 @@ final class StripeInstallCommand extends Command
             return;
         }
 
+        /** @var list<string>|false $lines */
         $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!$lines) {
+            $this->warn('.env file is empty; skipping Stripe key injection.');
+            return;
+        }
         $required = [
             'STRIPE_PUBLISHABLE_KEY',
             'STRIPE_SECRET_KEY',
@@ -148,7 +146,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($envFile, "\n" . $append, FILE_APPEND);
-        $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing));
+        $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing) . "\n");
     }
 
     /**
@@ -167,7 +165,12 @@ final class StripeInstallCommand extends Command
             return;
         }
 
+        /** @var list<string>|false $lines */
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            $this->warn('Failed to read config/app.mlc; skipping public path injection.');
+            return;
+        }
         $toAdd = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
 
         // 1) Find auth { … } block
@@ -285,7 +288,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $out) . "\n");
-        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.');
+        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.' . "\n");
     }
 
     /**
@@ -302,7 +305,12 @@ final class StripeInstallCommand extends Command
             return;
         }
 
+        /** @var list<string>|false $lines */
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            $this->warn('Failed to read config/app.mlc; skipping stripe section injection.');
+            return;
+        }
 
         // -----------------------------------------------------------------
         // 1) Find an existing `stripe {` block (track braces)
@@ -401,117 +409,7 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $lines) . "\n");
-        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.');
-    }
-
-    /**
-     * Ensure DI knows how to build WebhookMiddleware.
-     * Called from handle() after the other patch steps.
-     *
-     * @param string $projectRoot
-     */
-    private function addWebhookBinding(string $projectRoot): void
-    {
-        $appFile = "{$projectRoot}/config/app.php";
-        if (!is_file($appFile)) {
-            $this->warn('config/app.php not found; cannot inject WebhookMiddleware binding.');
-            return;
-        }
-
-        $code = file_get_contents($appFile);
-
-        // 1) Bail if the binding already exists
-        if (str_contains($code, 'WebhookMiddleware::class')) {
-            $this->info('WebhookMiddleware binding already present; nothing to do.');
-            return;
-        }
-
-        // Check if required use statements already exist
-        $hasWebhookMiddleware = str_contains($code, 'WebhookMiddleware');
-        $hasMemoryIdempotencyStore = str_contains($code, 'MemoryIdempotencyStore');
-        $hasMlcConfig = str_contains($code, 'MlcConfig');
-
-        // If any use statements are missing, add them after declare(strict_types=1);
-        if (!$hasWebhookMiddleware || !$hasMemoryIdempotencyStore || !$hasMlcConfig) {
-            $useStatements = <<<'PHP'
-
-
-use MonkeysLegion\Mlc\{
-    Config as MlcConfig,
-};
-use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
-use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
-
-PHP;
-
-            // Try to find declare(strict_types=1) statement
-            if (preg_match('/declare\s*\(\s*strict_types\s*=\s*1\s*\)\s*;/m', $code, $declareMatches, PREG_OFFSET_CAPTURE)) {
-                // Insert right after the declare statement
-                $insertPos = $declareMatches[0][1] + strlen($declareMatches[0][0]);
-                $code = substr_replace($code, $useStatements, $insertPos, 0);
-                $this->info('✓ Added required use statements after declare(strict_types=1) in app.php.');
-            } else if (preg_match('/namespace\s+.+;/m', $code, $nsMatches, PREG_OFFSET_CAPTURE)) {
-                // Fallback: Insert after namespace
-                $insertPos = $nsMatches[0][1] + strlen($nsMatches[0][0]);
-                $code = substr_replace($code, $useStatements, $insertPos, 0);
-                $this->info('✓ Added required use statements after namespace in app.php.');
-            } else {
-                // Last resort: Insert after <?php
-                $phpPos = strpos($code, '<?php');
-                if ($phpPos !== false) {
-                    $insertPos = $phpPos + 5;
-                    $code = substr_replace($code, $useStatements, $insertPos, 0);
-                    $this->info('✓ Added required use statements after <?php in app.php.');
-                }
-            }
-        }
-
-        // 2) Locate the outermost "return [" that begins the DI array
-        if (!preg_match('/return\s*\[\s*$/m', $code, $m, PREG_OFFSET_CAPTURE)) {
-            $this->warn('Could not locate the DI definition array in app.php.');
-            return;
-        }
-        $arrayStart = $m[0][1] + strlen($m[0][0]);   // position *after* the line
-
-        // 3) Walk forward to find the matching closing "];"
-        $depth = 1;           // we’re inside "["
-        $pos   = $arrayStart;
-        $len   = strlen($code);
-        while ($pos < $len && $depth > 0) {
-            $ch = $code[$pos];
-            if ($ch === '[') {
-                $depth++;
-            }
-            if ($ch === ']') {
-                $depth--;
-            }
-            $pos++;
-        }
-        if ($depth !== 0) {
-            $this->warn('Malformed DI array in app.php; could not find closing bracket.');
-            return;
-        }
-        $arrayEnd = $pos - 1;   // position of ']'
-
-        // 4) Build the factory text with same indent as others (4 spaces)
-        $factory = <<<'PHP'
-
-                        /* ----------------------------------------------------------------- */
-                        /* Stripe — WebhookMiddleware binding                                */
-                        /* ----------------------------------------------------------------- */
-                        WebhookMiddleware::class => fn($c) => new WebhookMiddleware(
-                            $c->get(MlcConfig::class)->get('stripe.endpoint_secrets', []),
-                            (int)  $c->get(MlcConfig::class)->get('stripe.webhook_tolerance', 300),
-                            $c->get(MemoryIdempotencyStore::class),
-                            $c->get(MlcConfig::class)->get('stripe.webhook_default_ttl', 172800),
-                            (bool) $c->get(MlcConfig::class)->get('stripe.test_mode', true),
-                        ),
-                    PHP;
-        // 5) Inject before the closing "]"
-        $patched = substr_replace($code, $factory . "\n", $arrayEnd, 0);
-        file_put_contents($appFile, $patched);
-
-        $this->info('✓ Added WebhookMiddleware binding to config/app.php.');
+        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.' . "\n");
     }
 
     /**
@@ -529,9 +427,12 @@ PHP;
 
         // Read the composer.json file
         $json = file_get_contents($composerFile);
+        if ($json === false) {
+            $this->warn('Failed to read composer.json; cannot add StripeServiceProvider.');
+            return;
+        }
         $composerData = json_decode($json, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
+        if ($composerData === null || !is_array($composerData)) {
             $this->warn('Failed to parse composer.json: ' . json_last_error_msg());
             return;
         }
@@ -540,15 +441,15 @@ PHP;
         $provider = 'MonkeysLegion\\Stripe\\Provider\\StripeServiceProvider';
 
         // Create nested structure if needed
-        if (!isset($composerData['extra'])) {
+        if (!isset($composerData['extra']) || !is_array($composerData['extra'])) {
             $composerData['extra'] = [];
         }
 
-        if (!isset($composerData['extra']['monkeyslegion'])) {
+        if (!isset($composerData['extra']['monkeyslegion']) || !is_array($composerData['extra']['monkeyslegion'])) {
             $composerData['extra']['monkeyslegion'] = [];
         }
 
-        if (!isset($composerData['extra']['monkeyslegion']['providers'])) {
+        if (!isset($composerData['extra']['monkeyslegion']['providers']) || !is_array($composerData['extra']['monkeyslegion']['providers'])) {
             $composerData['extra']['monkeyslegion']['providers'] = [];
         }
 
@@ -565,7 +466,7 @@ PHP;
         $jsonOptions = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
         file_put_contents($composerFile, json_encode($composerData, $jsonOptions) . "\n");
 
-        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers');
+        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers' . "\n");
     }
 
     /**
@@ -578,6 +479,7 @@ PHP;
             RecursiveIteratorIterator::SELF_FIRST
         );
 
+        /** @var \SplFileInfo $item */
         foreach ($iterator as $item) {
             $relative = substr($item->getPathname(), strlen($source) + 1);
             $target   = $dest . DIRECTORY_SEPARATOR . $relative;

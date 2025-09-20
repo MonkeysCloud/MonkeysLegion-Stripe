@@ -2,87 +2,118 @@
 
 namespace MonkeysLegion\Stripe\Storage\Stores;
 
+use MonkeysLegion\Database\SQLite\Connection;
+use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Interface\IdempotencyStoreInterface;
+use PDO;
 
-class SQLiteStore implements IdempotencyStoreInterface
+class SQLiteStore extends AbstractStore implements IdempotencyStoreInterface
 {
-    private \PDO $pdo;
-    private string $dbPath;
-
-    public function __construct(?string $dbPath = null)
+    /**
+     * @param string|null $filePath Path to SQLite file. Use ':memory:' for in-memory DB.
+     *                              Use 'shared' for shared in-memory cache.
+     */
+    public function __construct(string $tableName = 'idempotency_store', ?string $filePath = null)
     {
-        $this->dbPath = $dbPath ?? realpath(__DIR__ . '/../../../database/idempotency_store.sqlite');
-        $this->pdo = new \PDO("sqlite:{$this->dbPath}");
-        $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        if ($filePath === 'shared') {
+            // Shared in-memory cache accessible across multiple connections
+            $dsn = 'sqlite:file::memory:?cache=shared';
+        } elseif ($filePath === null || $filePath === ':memory:') {
+            // Pure in-memory DB, unique per connection
+            $dsn = 'sqlite::memory:';
+        } else {
+            // Persistent file-based SQLite
+            $dsn = 'sqlite:' . $filePath;
+        }
+
+        $this->queryBuilder = new QueryBuilder(new Connection([
+            'dsn' => $dsn,
+            'options' => [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ],
+        ]));
+
+        $this->tableName = $tableName;
         $this->createTable();
-    }
-
-    private function createTable(): void
-    {
-        $sql = "
-            CREATE TABLE IF NOT EXISTS idempotency_store (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id TEXT UNIQUE NOT NULL,
-                processed_at DATETIME NOT NULL,
-                expiry DATETIME,
-                data TEXT
-            )
-        ";
-        $this->pdo->exec($sql);
     }
 
     public function isProcessed(string $eventId): bool
     {
-        $stmt = $this->pdo->prepare("
-            SELECT * FROM idempotency_store 
-            WHERE event_id = ? AND (expiry IS NULL OR expiry > datetime('now'))
-        ");
-        $stmt->execute([$eventId]);
-        return $stmt->fetch() !== false;
+        $result = $this->queryBuilder
+            ->select()
+            ->from($this->tableName)
+            ->where('event_id', '=', $eventId)
+            ->andWhere('expiry', 'IS', null)
+            ->orWhere('expiry', '>', date('Y-m-d H:i:s'))
+            ->fetch();
+
+        return $result !== false;
     }
 
     public function markAsProcessed(string $eventId, ?int $ttl = null, array $eventData = []): void
     {
         $expiry = $ttl ? date('Y-m-d H:i:s', time() + $ttl) : null;
 
-        $stmt = $this->pdo->prepare("
-            INSERT OR REPLACE INTO idempotency_store (event_id, processed_at, expiry, data) 
-            VALUES (?, ?, ?, ?)
-        ");
-        $stmt->execute([
-            $eventId,
-            date('Y-m-d H:i:s'),
-            $expiry,
-            json_encode($eventData)
-        ]);
+        $data = [
+            'event_id' => $eventId,
+            'processed_at' => date('Y-m-d H:i:s'),
+            'expiry' => $expiry,
+            'data' => json_encode($eventData, JSON_THROW_ON_ERROR),
+        ];
+
+        try {
+            $this->queryBuilder->insert($this->tableName, $data);
+        } catch (\Exception $e) {
+            $this->queryBuilder
+                ->update($this->tableName, $data)
+                ->where('event_id', '=', $eventId)
+                ->execute();
+        }
     }
 
     public function removeEvent(string $eventId): void
     {
-        $stmt = $this->pdo->prepare("DELETE FROM idempotency_store WHERE event_id = ?");
-        $stmt->execute([$eventId]);
+        $this->queryBuilder
+            ->delete($this->tableName)
+            ->where('event_id', '=', $eventId)
+            ->execute();
     }
 
     public function clearAll(): void
     {
-        $this->pdo->exec("DELETE FROM idempotency_store");
+        $this->queryBuilder
+            ->delete($this->tableName)
+            ->execute();
     }
 
     public function cleanupExpired(): void
     {
-        $this->pdo->exec("DELETE FROM idempotency_store WHERE expiry IS NOT NULL AND expiry < datetime('now')");
+        $this->queryBuilder
+            ->delete($this->tableName)
+            ->where('expiry', 'IS NOT', null)
+            ->andWhere('expiry', '<', date('Y-m-d H:i:s'))
+            ->execute();
     }
 
     public function getAllEvents(): array
     {
-        $stmt = $this->pdo->query("SELECT data FROM idempotency_store WHERE data IS NOT NULL");
+        $rows = $this->queryBuilder
+            ->select(['data'])
+            ->from($this->tableName)
+            ->whereNotNull('data')
+            ->fetchAll();
+
         $events = [];
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $data = json_decode($row['data'], true);
-            if (is_array($data)) {
-                $events[] = $data;
+        foreach ($rows as $row) {
+            if (isset($row['data']) && is_string($row['data'])) {
+                $data = json_decode($row['data'], true);
+                if (is_array($data)) {
+                    $events[] = $data;
+                }
             }
         }
+
         return $events;
     }
 }

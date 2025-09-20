@@ -9,6 +9,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function createSubscription(string $customerId, string $priceId, array $options = []): \Stripe\Subscription
     {
         return $this->handle(function () use ($customerId, $priceId, $options) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->create(array_merge([
                 'customer' => $customerId,
                 'items' => [['price' => $priceId]],
@@ -19,6 +20,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function retrieveSubscription(string $subscriptionId, array $options = []): \Stripe\Subscription
     {
         return $this->handle(function () use ($subscriptionId, $options) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->retrieve($subscriptionId, $options);
         });
     }
@@ -26,6 +28,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function updateSubscription(string $subscriptionId, array $params): \Stripe\Subscription
     {
         return $this->handle(function () use ($subscriptionId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->update($subscriptionId, $params);
         });
     }
@@ -33,6 +36,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function cancelSubscription(string $subscriptionId, array $options = []): \Stripe\Subscription
     {
         return $this->handle(function () use ($subscriptionId, $options) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->cancel($subscriptionId, $options);
         });
     }
@@ -40,6 +44,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function listSubscriptions(string $customerId, array $params = []): \Stripe\Collection
     {
         return $this->handle(function () use ($customerId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->all(array_merge(['customer' => $customerId], $params));
         });
     }
@@ -47,6 +52,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function resumeSubscription(string $subscriptionId, array $params = []): \Stripe\Subscription
     {
         return $this->handle(function () use ($subscriptionId, $params) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->update($subscriptionId, array_merge(['pause_collection' => null], $params));
         });
     }
@@ -54,6 +60,7 @@ class Subscription extends StripeWrapper implements SubscriptionInterface
     public function searchSubscriptions(array $params): \Stripe\SearchResult
     {
         return $this->handle(function () use ($params) {
+            $this->ensureStripeClient();
             return $this->stripe->subscriptions->search($params);
         });
     }
