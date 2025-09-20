@@ -4,26 +4,22 @@ namespace MonkeysLegion\Stripe\Webhook;
 
 use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use MonkeysLegion\Stripe\Controller\Controller;
+use MonkeysLegion\Stripe\Enum\Stages;
+use MonkeysLegion\Stripe\Exceptions\EventAlreadyProcessedException;
 use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
-use Stripe\Exception\CardException;
-use Stripe\Exception\InvalidRequestException;
 use Stripe\Exception\RateLimitException;
-use Stripe\Exception\AuthenticationException;
 use Stripe\Exception\SignatureVerificationException;
 
 class WebhookController extends Controller
 {
-    protected WebhookMiddleware $webhookMiddleware;
-    private MemoryIdempotencyStore $idempotencyStore;
-    private ?FrameworkLoggerInterface $logger;
     private int $timeout = 60; // Default timeout for webhook processing
     private int $retries = 3; // Default number of retries for webhook processing
     private int $backoff = 60; // Initial backoff time in seconds
-    private bool $prod_mode = false; // Flag to indicate production mode
+    private Stages $stage;
     private int $maxPayloadSize = 128 * 1024;
 
     /**
@@ -33,22 +29,73 @@ class WebhookController extends Controller
      * @param MemoryIdempotencyStore $idempotencyStore Store for idempotency checks
      * @param ServiceContainer $c Service container for dependency injection
      */
-    public function __construct(WebhookMiddleware $webhookMiddleware, MemoryIdempotencyStore $idempotencyStore, ServiceContainer $c, ?FrameworkLoggerInterface $logger = null)
-    {
-        $this->webhookMiddleware = $webhookMiddleware;
-        $this->idempotencyStore = $idempotencyStore;
-        $this->logger = $logger ?? null;
+    public function __construct(
+        private WebhookMiddleware $webhookMiddleware,
+        private MemoryIdempotencyStore $idempotencyStore,
+        ServiceContainer $c,
+        private ?FrameworkLoggerInterface $logger = null
+    ) {
+        // Set the app stage
+        $this->stage = $this->webhookMiddleware->getStage();
+
+        // Set configurations from service container
         $config = $c->getConfig('stripe');
         $this->timeout = is_numeric($config['timeout']) ? (int)$config['timeout'] : $this->timeout;
         $this->retries = is_numeric($config['webhook_retries']) ? (int)$config['webhook_retries'] : $this->retries;
         $this->backoff = isset($config['backoff']) && is_numeric($config['backoff']) ? (int)$config['backoff'] : $this->backoff;
         $this->maxPayloadSize = is_numeric($config['max_payload_size']) ? (int)$config['max_payload_size'] : $this->maxPayloadSize;
-        $this->prod_mode = isset($_ENV['APP_ENV']) && is_string($_ENV['APP_ENV']) && strpos($_ENV['APP_ENV'], 'prod') !== false;
     }
 
-    public function setLogger(FrameworkLoggerInterface $logger): void
+    /**
+     * Set the stage for this controller
+     *
+     * @param Stages $stage
+     */
+    public function setStage(Stages $stage): void
     {
-        $this->logger = $logger;
+        $this->stage = $stage;
+    }
+
+    /**
+     * Get current stage
+     *
+     * @return Stages
+     */
+    public function getStage(): Stages
+    {
+        return $this->stage;
+    }
+
+    public function setIdempotencyStore(MemoryIdempotencyStore $store): void
+    {
+        $this->idempotencyStore = $store;
+    }
+
+    public function getIdempotencyStore(): MemoryIdempotencyStore
+    {
+        return $this->idempotencyStore;
+    }
+
+    /**
+     * Check if retries should be enabled for current stage
+     * Dev stage: no retries, Test stage: yes retries (instant), Prod stage: yes retries (with backoff)
+     *
+     * @return bool
+     */
+    private function shouldRetry(): bool
+    {
+        return in_array($this->stage, [Stages::TEST, Stages::TESTING, Stages::PROD, Stages::PRODUCTION], true);
+    }
+
+    /**
+     * Check if backoff should be used for retries
+     * Dev stage: no backoff (no retries), Test stage: no backoff (instant retry), Prod stage: yes backoff
+     *
+     * @return bool
+     */
+    private function shouldUseBackoff(): bool
+    {
+        return in_array($this->stage, [Stages::PROD, Stages::PRODUCTION], true);
     }
 
     /**
@@ -67,22 +114,23 @@ class WebhookController extends Controller
         $this->payload_check($payload);
         $this->logger?->smartLog("WebhookController: Received payload for processing.", [
             'payload_length' => strlen($payload),
-            'sig_header' => $sigHeader
+            'sig_header' => $sigHeader,
+            'stage' => $this->stage->value
         ]);
-        $retryCount = 0;
-        while ($retryCount < $this->retries) {
-            try {
-                if (!function_exists('pcntl_fork')) {
-                    $this->logger?->notice("pcntl not available, skipping timeout logic.");
-                }
 
-                if (function_exists('pcntl_fork') && $this->prod_mode) {
-                    // Use a timeout to enforce processing limits
+        $retryCount = 0;
+        $maxRetries = $this->shouldRetry() ? $this->retries : 0;
+
+        while ($retryCount <= $maxRetries) {
+            try {
+                // Use timeout if pcntl is available, regardless of stage
+                if (function_exists('pcntl_fork')) {
+                    $this->logger?->smartLog("WebhookController: Using timeout for stage {$this->stage->value}");
                     $result = $this->executeWithTimeout(function () use ($payload, $sigHeader) {
                         return $this->webhookMiddleware->verifyAndProcess($payload, $sigHeader);
                     }, $this->timeout);
                 } else {
-                    // Fallback: run without timeout on platforms like Windows
+                    $this->logger?->smartLog("WebhookController: No timeout (pcntl not available) for stage {$this->stage->value}");
                     $result = $this->webhookMiddleware->verifyAndProcess($payload, $sigHeader);
                 }
 
@@ -90,28 +138,43 @@ class WebhookController extends Controller
 
                 // Pass event data to callback
                 return $callback($result);
+            } catch (SignatureVerificationException $e) {
+                throw $e; // Let this bubble up directly
+            } catch (EventAlreadyProcessedException $e) {
+                throw $e; // Let this bubble up directly
             } catch (RateLimitException | ApiConnectionException | ApiErrorException $e) {
-                // Retry on transient errors or server errors only in production mode
-                if ($this->prod_mode && $retryCount < $this->retries - 1) {
+                // Only retry if retries are enabled for this stage
+                if ($this->shouldRetry() && $retryCount < $maxRetries) {
                     $this->logger?->error("WebhookController: Retriable error occurred", [
                         'error' => $e->getMessage(),
                         'retry_count' => $retryCount,
-                        'backoff_time' => $this->backoff
+                        'backoff_time' => $this->shouldUseBackoff() ? $this->backoff : 0,
+                        'stage' => $this->stage->value
                     ]);
-                    $this->logger?->smartLog("Retrying in {$this->backoff} seconds...");
-                    sleep($this->backoff);
-                    $this->backoff += 60; // Increment backoff time
+
+                    if ($this->shouldUseBackoff()) {
+                        $this->logger?->smartLog("Retrying in {$this->backoff} seconds...");
+                        sleep($this->backoff);
+                        $this->backoff += 60; // Increment backoff time
+                    } else {
+                        $this->logger?->smartLog("Retrying instantly (no backoff for stage {$this->stage->value})...");
+                        // No sleep for test stage - instant retry
+                    }
+
                     $retryCount++;
                 } else {
-                    // In non-prod mode or max retries reached, throw immediately
-                    $errorMsg = $this->prod_mode ? 'Max retries reached: ' : 'Non-production mode, no retries: ';
+                    // No retries for this stage or max retries reached
+                    $errorMsg = $this->shouldRetry()
+                        ? 'Max retries reached: '
+                        : "Stage {$this->stage->value} does not allow retries: ";
                     $this->logger?->error("WebhookController: " . $errorMsg . $e->getMessage());
                     throw new \RuntimeException($errorMsg . $e->getMessage(), $e->getCode(), $e);
                 }
             } catch (\Exception $e) {
                 // No retry for unexpected errors
-                $this->logger?->error("WebhookController : An unexpected error occurred", [
-                    'error' => $e->getMessage()
+                $this->logger?->error("WebhookController: An unexpected error occurred", [
+                    'error' => $e->getMessage(),
+                    'stage' => $this->stage->value
                 ]);
                 throw new \RuntimeException('An unexpected error occurred: ' . $e->getMessage(), $e->getCode(), $e);
             }
@@ -121,20 +184,17 @@ class WebhookController extends Controller
         throw new \RuntimeException('Webhook processing failed after maximum retries.');
     }
 
-
-    private function payload_check(string $payload): bool
+    public function payload_check(string $payload): bool
     {
-        if (empty($payload)) {
-            $this->logger?->error("WebhookController: Empty payload received.");
-            throw new \InvalidArgumentException('Empty payload received.');
-        }
-        if (strlen($payload) > $this->maxPayloadSize) {
-            $this->logger?->error("WebhookController: Payload exceeds maximum size.");
-            throw new \InvalidArgumentException('Payload exceeds maximum size.');
-        }
-        if (!json_decode($payload, true)) {
-            $this->logger?->error("WebhookController: Invalid payload type received.");
-            throw new \InvalidArgumentException('Invalid payload type received.');
+        $messages = [];
+
+        if (empty($payload)) $messages[] = 'Payload is empty.';
+        if (strlen($payload) > $this->maxPayloadSize) $messages[] = 'Payload exceeds maximum size.';
+        if (!json_decode($payload, true)) $messages[] = 'Payload is not valid JSON.';
+
+        if (!empty($messages)) {
+            $this->logger?->error("WebhookController: " . $messages[0]);
+            throw new \InvalidArgumentException("WebhookController: " . $messages[0]);
         }
         return true;
     }

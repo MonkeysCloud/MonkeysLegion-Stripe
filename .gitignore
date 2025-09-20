@@ -32,3 +32,5 @@
 # OS-specific files
 .DS_Store
 Thumbs.db
+phpunit.xml.backup
+phpunit.xml.bak

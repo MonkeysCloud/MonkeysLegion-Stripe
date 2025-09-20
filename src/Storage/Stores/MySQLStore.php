@@ -2,16 +2,17 @@
 
 namespace MonkeysLegion\Stripe\Storage\Stores;
 
+use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Interface\IdempotencyStoreInterface;
 
-class MySQLStore implements IdempotencyStoreInterface
+class MySQLStore extends AbstractStore implements IdempotencyStoreInterface
 {
-    private QueryBuilder $queryBuilder;
-
-    public function __construct(QueryBuilder $queryBuilder)
+    public function __construct(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', private ?FrameworkLoggerInterface $logger = null)
     {
         $this->queryBuilder = $queryBuilder;
+        $this->tableName = $tableName;
+        $this->createTable();
     }
 
     /**
@@ -21,7 +22,7 @@ class MySQLStore implements IdempotencyStoreInterface
     {
         $result = $this->queryBuilder
             ->select()
-            ->from('idempotency_store')
+            ->from($this->tableName)
             ->where('event_id', '=', $eventId)
             ->fetch();
 
@@ -49,13 +50,13 @@ class MySQLStore implements IdempotencyStoreInterface
             'data' => json_encode($eventData, JSON_THROW_ON_ERROR)
         ];
 
-        $insertId = $this->queryBuilder->insert('idempotency_store', $eventRow);
+        $insertId = $this->queryBuilder->insert($this->tableName, $eventRow);
 
         // Debug: log insert result
         if (!$insertId) {
-            error_log("Failed to insert event into idempotency_store: " . json_encode($eventRow));
+            $this->logger?->error("Failed to insert event into idempotency_store: ", $eventRow);
         } else {
-            error_log("Inserted event into idempotency_store with ID: $insertId and event_id: $eventId");
+            $this->logger?->info("Inserted event into idempotency_store with ID: $insertId and event_id: $eventId");
         }
     }
 
@@ -65,7 +66,7 @@ class MySQLStore implements IdempotencyStoreInterface
     public function removeEvent(string $eventId): void
     {
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->where('event_id', '=', $eventId)
             ->execute();
     }
@@ -76,7 +77,7 @@ class MySQLStore implements IdempotencyStoreInterface
     public function clearAll(): void
     {
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->execute();
     }
 
@@ -87,7 +88,7 @@ class MySQLStore implements IdempotencyStoreInterface
     {
         $now = time();
         $this->queryBuilder
-            ->delete('idempotency_store')
+            ->delete($this->tableName)
             ->where('expiry', '<', $now)
             ->execute();
     }
@@ -101,7 +102,7 @@ class MySQLStore implements IdempotencyStoreInterface
     {
         $rows = $this->queryBuilder
             ->select()
-            ->from('idempotency_store')
+            ->from($this->tableName)
             ->fetchAll();
 
         $events = [];

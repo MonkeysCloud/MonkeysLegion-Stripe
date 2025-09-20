@@ -2,19 +2,16 @@
 
 namespace MonkeysLegion\Stripe\Middleware;
 
+use MonkeysLegion\Stripe\Enum\Stages;
+use MonkeysLegion\Stripe\Exceptions\EventAlreadyProcessedException;
 use Stripe\Webhook;
 use Stripe\Exception\SignatureVerificationException;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 
 class WebhookMiddleware
 {
-    /** @var array<string, string> */
-    private array $endpointSecrets;
     private string $endpointSecret;
-    private int $tolerance;
-    private MemoryIdempotencyStore $idempotencyStore;
-    private ?int $defaultTtl;
-    private bool $testMode = true;
+    private Stages $stage;
     private const TEST_SECRET_KEY = 'webhook_secret_test';
     private const LIVE_SECRET_KEY = 'webhook_secret';
 
@@ -25,37 +22,73 @@ class WebhookMiddleware
      * @param int $tolerance
      * @param MemoryIdempotencyStore $idempotencyStore
      * @param int|null $defaultTtl
-     * @param bool $testMode
+     * @param Stages|null $stage
      */
     public function __construct(
-        array $endpointSecrets,
-        int $tolerance,
-        MemoryIdempotencyStore $idempotencyStore,
-        ?int $defaultTtl = 172800, // 48 hours default
-        bool $testMode = true
+        private array $endpointSecrets,
+        private int $tolerance,
+        private MemoryIdempotencyStore $idempotencyStore,
+        private ?int $defaultTtl = 172800, // 48 hours default
+        ?Stages $stage = null
     ) {
-        $this->endpointSecrets = $endpointSecrets;
-        $this->tolerance = $tolerance;
-        $this->idempotencyStore = $idempotencyStore;
-        $this->defaultTtl = $defaultTtl;
-        $this->setTestMode($testMode);
+        $this->setStageMode($stage);
     }
 
     /**
-     * Set the test mode for the webhook middleware.
+     * Set the stage mode for the webhook middleware.
      *
-     * @param bool $testMode true for test mode, false for live mode
+     * @param Stages $stage
      */
-    public function setTestMode(bool $testMode): void
+    public function setStageMode(?Stages $stage): void
     {
-        $this->testMode = $testMode;
-        $key_name = $this->testMode ? self::TEST_SECRET_KEY : self::LIVE_SECRET_KEY;
+        if ($stage === null) {
+            $envStage = $_ENV['APP_ENV'] ?? 'dev';
+            $this->stage = Stages::tryFrom($envStage) ?? Stages::DEV;
+        } else {
+            $this->stage = $stage;
+        }
+
+        // Dev and Test stages use test secrets (same behavior as prod mode for secrets)
+        // Prod stage uses live secrets
+        $key_name = ($this->stage === Stages::PROD || $this->stage === Stages::PRODUCTION)
+            ? self::LIVE_SECRET_KEY
+            : self::TEST_SECRET_KEY;
 
         if (!isset($this->endpointSecrets[$key_name])) {
-            throw new \RuntimeException("{$key_name} for mode is missing.");
+            throw new \RuntimeException("{$key_name} for stage {$this->stage->value} is missing.");
         }
 
         $this->endpointSecret = $this->endpointSecrets[$key_name];
+    }
+
+    /**
+     * Get current stage
+     *
+     * @return Stages
+     */
+    public function getStage(): Stages
+    {
+        return $this->stage;
+    }
+
+    public function setIdempotencyStore(MemoryIdempotencyStore $store): void
+    {
+        $this->idempotencyStore = $store;
+    }
+
+    public function getIdempotencyStore(): MemoryIdempotencyStore
+    {
+        return $this->idempotencyStore;
+    }
+
+    /**
+     * Check if current stage is production
+     *
+     * @return bool
+     */
+    public function isProductionStage(): bool
+    {
+        return in_array($this->stage, [Stages::PROD, Stages::PRODUCTION], true);
     }
 
     /**
@@ -74,7 +107,7 @@ class WebhookMiddleware
 
         // Only check idempotency for successfully verified events
         if ($this->idempotencyStore->isProcessed($event['id'])) {
-            throw new \InvalidArgumentException('Event already processed: ' . $event['id']);
+            throw new EventAlreadyProcessedException($event['id']);
         }
 
         // // Mark event as processed only after successful verification

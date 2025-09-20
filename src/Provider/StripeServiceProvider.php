@@ -5,10 +5,12 @@ namespace MonkeysLegion\Stripe\Provider;
 use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use MonkeysLegion\Core\Logger\MonkeyLogger;
 use MonkeysLegion\Core\Provider\ProviderInterface;
+use MonkeysLegion\Database\Contracts\ConnectionInterface;
 use MonkeysLegion\Database\MySQL\Connection;
 use MonkeysLegion\DI\ContainerBuilder;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Client\{CheckoutSession, Product, SetupIntentService, StripeGateway, Subscription};
+use MonkeysLegion\Stripe\Enum\Stages;
 use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
@@ -79,10 +81,10 @@ class StripeServiceProvider implements ProviderInterface
      */
     private static function registerDatabaseServices(ServiceContainer $container, array $dbConfig): void
     {
-        $container->set(Connection::class, fn() => new Connection($dbConfig));
+        $container->set(ConnectionInterface::class, fn() => new Connection($dbConfig));
 
-        /** @var Connection $conn */
-        $conn = $container->get(Connection::class);
+        /** @var ConnectionInterface $conn */
+        $conn = $container->get(ConnectionInterface::class);
         $container->set(QueryBuilder::class, fn() => new QueryBuilder($conn));
     }
 
@@ -114,15 +116,11 @@ class StripeServiceProvider implements ProviderInterface
         FrameworkLoggerInterface $logger
     ): void {
         // Register MemoryIdempotencyStore
-        $container->set(MemoryIdempotencyStore::class, function () use ($container) {
-            $appEnv = $_ENV['APP_ENV'] ?? 'dev';
+        $container->set(MemoryIdempotencyStore::class, function () use ($container, $logger) {
             /** @var QueryBuilder $qb */
             $qb = $container->get(QueryBuilder::class);
 
-            return match ($appEnv) {
-                'prod', 'production' => new MemoryIdempotencyStore($qb),
-                default => new MemoryIdempotencyStore(),
-            };
+            return new MemoryIdempotencyStore($qb, $logger);
         });
 
         // Ensure endpoint secrets exist and are arrays
@@ -146,7 +144,7 @@ class StripeServiceProvider implements ProviderInterface
                 $webhook_tolerance,     // int
                 $idempotencyStore,      // store
                 $webhook_default_ttl,   // TTL
-                true                    // test mode
+                $this->getStage()       // current stage
             );
         });
 
@@ -239,5 +237,11 @@ class StripeServiceProvider implements ProviderInterface
         $content = require $path;
 
         return is_array($content) ? $content : [];
+    }
+
+    private function getStage(): Stages
+    {
+        $envStage = $_ENV['APP_ENV'] ?? 'dev';
+        return Stages::tryFrom($envStage) ?? Stages::DEV;
     }
 }
