@@ -7,15 +7,19 @@ use MonkeysLegion\Stripe\Webhook\WebhookController;
 use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
+use MonkeysLegion\Stripe\Enum\Stages;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Exception\RateLimitException;
-use PHPUnit\Framework\MockObject\Stub\ConsecutiveCalls;
+use PHPUnit\Framework\MockObject\MockObject;
 
 class WebhookControllerTest extends TestCase
 {
     private WebhookController $webhookController;
+    /** @var WebhookMiddleware&MockObject */
     private WebhookMiddleware $webhookMiddleware;
+    /** @var MemoryIdempotencyStore&MockObject */
     private MemoryIdempotencyStore $idempotencyStore;
+    /** @var ServiceContainer&MockObject */
     private ServiceContainer $container;
     private $logger;
 
@@ -24,6 +28,8 @@ class WebhookControllerTest extends TestCase
         parent::setUp();
 
         $this->webhookMiddleware = $this->createMock(WebhookMiddleware::class);
+        $this->webhookMiddleware->method('getStage')
+            ->willReturn(Stages::TESTING);
         $this->idempotencyStore = $this->createMock(MemoryIdempotencyStore::class);
         $this->container = $this->createMock(ServiceContainer::class);
         $this->container->method('getConfig')
@@ -46,14 +52,6 @@ class WebhookControllerTest extends TestCase
             $this->container,
             $this->logger
         );
-
-        // Set production mode for retries
-        $_ENV['APP_ENV'] = 'production';
-
-        // Ensure production mode is set in the controller using reflection
-        $reflection = new \ReflectionProperty($this->webhookController, 'prod_mode');
-        $reflection->setAccessible(true);
-        $reflection->setValue($this->webhookController, true);
     }
 
     /**
@@ -72,22 +70,16 @@ class WebhookControllerTest extends TestCase
         // Reset environment mode
         $_ENV['APP_ENV'] = 'testing';
 
-        // Reset production mode
-        $reflection = new \ReflectionProperty($this->webhookController, 'prod_mode');
-        $reflection->setAccessible(true);
-        $reflection->setValue($this->webhookController, false);
-
         parent::tearDown();
     }
 
     public function testHandleValidPayload(): void
     {
         $payload = $this->getTestWebhookPayload();
-        $sigHeader = 'test_signature';
+        $sigHeader = $this->getTestSignatureHeader($payload, $this->webhookMiddleware->getEndPointSecret());
         $eventData = json_decode($payload, true);
 
-        $this->webhookMiddleware->expects($this->once())
-            ->method('verifyAndProcess')
+        $this->webhookMiddleware->method('verifyAndProcess')
             ->with($payload, $sigHeader)
             ->willReturn($eventData);
 
@@ -105,7 +97,7 @@ class WebhookControllerTest extends TestCase
     public function testHandleInvalidPayload(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid payload type received');
+        $this->expectExceptionMessage('WebhookController: Payload is not valid JSON.');
 
         $this->webhookController->handle('not-json', 'test_signature', function () {
             return 'should not be called';
@@ -115,7 +107,7 @@ class WebhookControllerTest extends TestCase
     public function testHandleEmptyPayload(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Empty payload received');
+        $this->expectExceptionMessage('WebhookController: Payload is empty.');
 
         $this->webhookController->handle('', 'test_signature', function () {
             return 'should not be called';
@@ -142,12 +134,11 @@ class WebhookControllerTest extends TestCase
         $payload = $this->getTestWebhookPayload();
         $sigHeader = 'invalid_signature';
 
-        $this->webhookMiddleware->expects($this->once())
-            ->method('verifyAndProcess')
+        $this->webhookMiddleware->method('verifyAndProcess')
             ->with($payload, $sigHeader)
             ->willThrowException(new SignatureVerificationException('Invalid signature', 401));
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(SignatureVerificationException::class);
         $this->expectExceptionMessage('Invalid signature');
 
         $this->webhookController->handle($payload, $sigHeader, function () {
@@ -157,54 +148,77 @@ class WebhookControllerTest extends TestCase
 
     public function testHandleWithRetriableError(): void
     {
-        $payload = $this->getTestWebhookPayload();
-        $sigHeader = 'test_signature';
-
-        // Ensure prod_mode is true for this specific test
-        $reflection = new \ReflectionProperty($this->webhookController, 'prod_mode');
+        // Set retries to 1 retry (total 2 attempts)
+        $reflection = new \ReflectionProperty($this->webhookController, 'retries');
         $reflection->setAccessible(true);
-        $reflection->setValue($this->webhookController, true);
+        $reflection->setValue($this->webhookController, 1);
 
-        // Configure middleware to fail twice with rate limit error, then succeed
-        $this->webhookMiddleware->expects($this->exactly(2))
-            ->method('verifyAndProcess')
-            ->with($payload, $sigHeader)
-            ->will(new ConsecutiveCalls(
-                [
-                    $this->throwException(new RateLimitException('Rate limited', 429)),
-                    json_decode($payload, true) // must be actual array, not closure
-                ]
-            ));
+        // Ensure prod_mode is true for this test
+        $this->webhookMiddleware->setStageMode(Stages::PROD);
+        $this->webhookController->setStage(Stages::PROD);
+
+        // Create a fake Stripe event
+        $event = $this->createMock(\Stripe\Event::class);
+        $event->id = 'evt_test';
+        $event->type = 'charge.succeeded';
+
+        $payload = $this->getTestWebhookPayload();
+        $sigHeader = $this->getTestSignatureHeader(
+            $payload,
+            $this->webhookMiddleware->getEndPointSecret()
+        );
+
+        // Mock the middleware: fail once, then succeed
+        $this->webhookMiddleware->method('verifyAndProcess')
+            ->willReturnCallback(function () use ($event) {
+                static $count = 0;
+                $count++;
+                if ($count === 1) {
+                    throw new RateLimitException('Rate limited', 429);
+                }
+                return $event;
+            });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Max retries reached: Rate limited');
 
         $callbackCalled = false;
-        $result = $this->webhookController->handle($payload, $sigHeader, function () use (&$callbackCalled) {
-            $callbackCalled = true;
-            return 'success';
-        });
 
-        $this->assertTrue($callbackCalled);
-        $this->assertEquals('success', $result);
+        // Call the handle method
+        $result = $this->webhookController->handle(
+            $payload,
+            $sigHeader,
+            function () use (&$callbackCalled) {
+                $callbackCalled = true;
+                return 'success';
+            }
+        );
+
+        // Assertions
+        $this->assertTrue($callbackCalled, 'Callback should have been called.');
+        $this->assertEquals('success', $result, 'Handle should return the callback result.');
     }
 
     public function testHandleWithMaxRetriesExceeded(): void
     {
-        $payload = $this->getTestWebhookPayload();
-        $sigHeader = 'test_signature';
+        $controller = $this->getMockBuilder(WebhookController::class)
+            ->setConstructorArgs([$this->webhookMiddleware, $this->idempotencyStore, $this->container, $this->logger])
+            ->onlyMethods(['payload_check'])
+            ->getMock();
 
-        // Ensure prod_mode is true for this specific test
-        $reflection = new \ReflectionProperty($this->webhookController, 'prod_mode');
-        $reflection->setAccessible(true);
-        $reflection->setValue($this->webhookController, true);
+        $controller->method('payload_check')->willReturn(true);
+
+        // Ensure test mode to disable backoff completely
+        $controller->setStage(Stages::TESTING);
 
         // Configure middleware to always fail with rate limit error
-        $this->webhookMiddleware->expects($this->exactly(2))
-            ->method('verifyAndProcess')
+        $this->webhookMiddleware->method('verifyAndProcess')
             ->willThrowException(new RateLimitException('Rate limited', 429));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Max retries reached');
+        $this->expectExceptionMessage('Max retries reached: Rate limited');
 
-        $this->webhookController->handle($payload, $sigHeader, function () {
+        $controller->handle('{}', 'invalid_sig', function () {
             return 'should not be called';
         });
     }
@@ -230,5 +244,128 @@ class WebhookControllerTest extends TestCase
             ->with($eventId);
 
         $this->webhookController->removeProcessedEvent($eventId);
+    }
+
+    public function testHandleWithRetriableErrorInProdStage(): void
+    {
+        // Set to production stage to enable retries
+        $this->webhookController->setStage(Stages::PROD);
+
+        // Create a fake Stripe event
+        $event = $this->createMock(\Stripe\Event::class);
+        $event->id = 'evt_test';
+        $event->type = 'charge.succeeded';
+
+        $payload = $this->getTestWebhookPayload();
+        $sigHeader = $this->getTestSignatureHeader(
+            $payload,
+            $this->webhookMiddleware->getEndPointSecret()
+        );
+
+        // Mock the middleware: fail once, then succeed
+        $this->webhookMiddleware->method('verifyAndProcess')
+            ->willReturnCallback(function () use ($event) {
+                static $count = 0;
+                $count++;
+                if ($count === 1) {
+                    throw new RateLimitException('Rate limited', 429);
+                }
+                return $event;
+            });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Max retries reached: Rate limited');
+
+        $callbackCalled = false;
+
+        // Call the handle method
+        $result = $this->webhookController->handle(
+            $payload,
+            $sigHeader,
+            function () use (&$callbackCalled) {
+                $callbackCalled = true;
+                return 'success';
+            }
+        );
+
+        // Assertions
+        $this->assertTrue($callbackCalled, 'Callback should have been called.');
+        $this->assertEquals('success', $result, 'Handle should return the callback result.');
+    }
+
+    public function testHandleWithRetriableErrorInTestStage(): void
+    {
+        // Set to test stage to enable retries with no backoff (instant retry)
+        $this->webhookController->setStage(Stages::TEST);
+
+        // Create a fake Stripe event
+        $event = $this->createMock(\Stripe\Event::class);
+        $event->id = 'evt_test';
+        $event->type = 'charge.succeeded';
+
+        $payload = $this->getTestWebhookPayload();
+        $sigHeader = $this->getTestSignatureHeader(
+            $payload,
+            $this->webhookMiddleware->getEndPointSecret()
+        );
+
+        // Mock the middleware: fail once, then succeed (instant retry - no backoff)
+        $this->webhookMiddleware->method('verifyAndProcess')
+            ->willReturnCallback(function () use ($event) {
+                static $count = 0;
+                $count++;
+                if ($count === 1) {
+                    throw new RateLimitException('Rate limited', 429);
+                }
+                return $event;
+            });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Max retries reached: Rate limited');
+
+        $callbackCalled = false;
+
+        // Call the handle method
+        $result = $this->webhookController->handle(
+            $payload,
+            $sigHeader,
+            function () use (&$callbackCalled) {
+                $callbackCalled = true;
+                return 'success';
+            }
+        );
+
+        // Assertions
+        $this->assertTrue($callbackCalled, 'Callback should have been called.');
+        $this->assertEquals('success', $result, 'Handle should return the callback result.');
+    }
+
+    public function testHandleWithRetriableErrorInDevStage(): void
+    {
+        // Set to dev stage to disable retries and backoff completely
+        $this->webhookController->setStage(Stages::DEV);
+
+        $payload = $this->getTestWebhookPayload();
+        $sigHeader = $this->getTestSignatureHeader(
+            $payload,
+            $this->webhookMiddleware->getEndPointSecret()
+        );
+
+        // Mock the middleware to always fail with rate limit error
+        $this->webhookMiddleware->method('verifyAndProcess')
+            ->willThrowException(new RateLimitException('Rate limited', 429));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Stage dev does not allow retries');
+
+        $this->webhookController->handle($payload, $sigHeader, function () {
+            return 'should not be called';
+        });
+    }
+
+    private function switchToProd(): void
+    {
+        $this->webhookMiddleware->setStageMode(Stages::PROD);
+        $this->webhookController->setStage(Stages::PROD);
     }
 }

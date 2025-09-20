@@ -20,9 +20,9 @@ abstract class TestCase extends PHPUnitTestCase
     protected function createMockContainer(): ServiceContainer
     {
         $config = [
-            'secret_key' => 'sk_test_51HqmkKLknLFzzbcKcgSE',
-            'test_key' => 'sk_test_51HqmkKLknLFzzbcKcgSE',
-            'publishable_key' => 'pk_test_51HqmkKLknLFzz',
+            'secret_key' => $_ENV['STRIPE_SECRET_KEY'] ?? 'sk_test_1234',
+            'test_key' => $_ENV['STRIPE_SECRET_KEY'] ?? 'sk_test_1234',
+            'publishable_key' => $_ENV['STRIPE_PUBLISHABLE_KEY'] ?? 'pk_test_1234',
             'webhook_secret' => 'whsec_prod_fake',
             'webhook_secret_test' => 'whsec_test_12345',
             'api_version' => '2025-04-30',

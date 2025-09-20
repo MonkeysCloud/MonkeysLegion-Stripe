@@ -10,15 +10,15 @@ class StorageImplementationsTest extends TestCase
 {
     private SQLiteStore $sqliteStore;
     private InMemoryStore $memoryStore;
-    private string $tempDbPath;
+    private string $tmpDbFile;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         // Create temporary SQLite database
-        $this->tempDbPath = sys_get_temp_dir() . '/stripe_test_' . uniqid() . '.sqlite';
-        $this->sqliteStore = new SQLiteStore($this->tempDbPath);
+        $this->tmpDbFile = tempnam(sys_get_temp_dir(), 'test_idempotency_') . '.db';
+        $this->sqliteStore = new SQLiteStore('idempotency_store', $this->tmpDbFile);
         $this->memoryStore = new InMemoryStore();
     }
 
@@ -26,12 +26,9 @@ class StorageImplementationsTest extends TestCase
     {
         parent::tearDown();
 
-        try {
-            if (file_exists($this->tempDbPath)) {
-                @unlink($this->tempDbPath);
-            }
-        } catch (\Exception $e) {
-            // Ignore errors during cleanup
+        // Remove temp SQLite file if it exists
+        if (file_exists($this->tmpDbFile)) {
+            @unlink($this->tmpDbFile);
         }
     }
 
@@ -81,7 +78,7 @@ class StorageImplementationsTest extends TestCase
         $this->sqliteStore->markAsProcessed($eventId);
 
         // Create a new instance of SQLiteStore pointing to the same file
-        $newStore = new SQLiteStore($this->tempDbPath);
+        $newStore = new SQLiteStore('idempotency_store', $this->tmpDbFile);
 
         // Should still find the event
         $this->assertTrue($newStore->isProcessed($eventId));

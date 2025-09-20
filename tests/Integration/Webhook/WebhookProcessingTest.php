@@ -2,17 +2,20 @@
 
 namespace MonkeysLegion\Stripe\Tests\Integration\Webhook;
 
+use MonkeysLegion\Stripe\Enum\Stages;
+use MonkeysLegion\Stripe\Exceptions\EventAlreadyProcessedException;
 use MonkeysLegion\Stripe\Tests\TestCase;
 use MonkeysLegion\Stripe\Webhook\WebhookController;
 use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
-use MonkeysLegion\Stripe\Storage\Stores\SQLiteStore;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
+use MonkeysLegion\Stripe\Storage\Stores\SQLiteStore;
 
 class WebhookProcessingTest extends TestCase
 {
     private WebhookController $webhookController;
     private string $webhookSecret;
+    private string $tmpDbFile;
 
     protected function setUp(): void
     {
@@ -25,21 +28,23 @@ class WebhookProcessingTest extends TestCase
 
         $this->webhookSecret = 'whsec_test_12345';
 
-        // Create real storage with SQLite for this integration test
+        // Create temp SQLite file
+        $this->tmpDbFile = tempnam(sys_get_temp_dir(), 'test_idempotency_') . '.db';
+        $store = new SQLiteStore('idempotency_store', $this->tmpDbFile);
         $idempotencyStore = new MemoryIdempotencyStore();
+        $idempotencyStore->setStore($store);
 
         // Create config container
-        $container = new ServiceContainer([
-            'stripe' => [
-                'webhook_secret_test' => $this->webhookSecret,
-                'webhook_secret' => 'whsec_live_fake',
-                'timeout' => 2, // Short timeout for testing
-                'webhook_retries' => 1,
-                'webhook_tolerance' => 300,
-                'max_payload_size' => 128 * 1024,
-                'backoff' => 1
-            ]
-        ]);
+        $container = ServiceContainer::getInstance();
+        $container->setConfig([
+            'webhook_secret_test' => $this->webhookSecret,
+            'webhook_secret' => 'whsec_live_fake',
+            'timeout' => 2, // Short timeout for testing
+            'webhook_retries' => 1,
+            'webhook_tolerance' => 300,
+            'max_payload_size' => 128 * 1024,
+            'backoff' => 1
+        ], 'stripe');
 
         // Create middleware with real components
         $webhookMiddleware = new WebhookMiddleware(
@@ -50,7 +55,7 @@ class WebhookProcessingTest extends TestCase
             300,
             $idempotencyStore,
             3600,
-            true
+            Stages::TESTING
         );
 
         // Create controller with real components
@@ -60,9 +65,16 @@ class WebhookProcessingTest extends TestCase
             $container,
             $this->createMockLogger()
         );
+    }
 
-        // Force production mode for retry testing
-        $_ENV['APP_ENV'] = 'prod';
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        // Remove temp SQLite file if it exists
+        if (file_exists($this->tmpDbFile)) {
+            @unlink($this->tmpDbFile);
+        }
     }
 
     public function testWebhookProcessingEndToEnd(): void
@@ -71,7 +83,6 @@ class WebhookProcessingTest extends TestCase
         // but will test our webhook processing logic end-to-end
 
         $payload = $this->getTestWebhookPayload();
-        $eventData = json_decode($payload, true);
 
         // Generate a proper signature that would work if our secret was registered with Stripe
         $signature = $this->getTestSignatureHeader($payload, $this->webhookSecret);
@@ -103,26 +114,19 @@ class WebhookProcessingTest extends TestCase
     public function testIdempotency(): void
     {
         $payload = $this->getTestWebhookPayload();
+        $header = $this->getTestSignatureHeader($payload, $this->webhookSecret);
         $eventData = json_decode($payload, true);
         $eventId = $eventData['id'];
 
-        // Test first call handling (would succeed with proper signature)
-        try {
-            $this->webhookController->handle($payload, 'dummy_sig', function () {
-                return true;
-            });
-        } catch (\Exception $e) {
-            // Expected since signature is invalid
-        }
-
-        // Regardless of signature verification, the event should be marked as processed
-        // if the event ID is valid
+        $this->webhookController->handle($payload, $header, function () {
+            return true;
+        });
 
         // Test idempotency check (second call should be rejected)
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(EventAlreadyProcessedException::class);
         $this->expectExceptionMessage('Event already processed');
 
-        $this->webhookController->handle($payload, 'dummy_sig', function () {
+        $this->webhookController->handle($payload, $header, function () {
             return true;
         });
     }

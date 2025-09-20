@@ -8,15 +8,13 @@ use MonkeysLegion\Stripe\Storage\Stores\SQLiteStore;
 class SQLiteStoreTest extends TestCase
 {
     private SQLiteStore $store;
-    private string $dbPath;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         // Use in-memory SQLite for testing
-        $this->dbPath = ':memory:';
-        $this->store = new SQLiteStore($this->dbPath);
+        $this->store = new SQLiteStore();
     }
 
     public function testMarkAsProcessedAndIsProcessed(): void

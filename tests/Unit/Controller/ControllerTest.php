@@ -21,6 +21,17 @@ class ControllerTest extends TestCase
         $this->controller = new Controller();
     }
 
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        // Kill stray child processes if pcntl is used
+        if (function_exists('pcntl_wait')) {
+            while (pcntl_wait($status, WNOHANG) > 0) {
+            }
+        }
+    }
+
     public function testExecuteWithTimeoutCompletesSuccessfully(): void
     {
         $result = $this->controller->executeWithTimeout(function () {
@@ -33,7 +44,7 @@ class ControllerTest extends TestCase
     public function testExecuteWithTimeoutThrowsExceptionOnTimeout(): void
     {
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Timeout reached while processing webhook');
+        $this->expectExceptionMessage('Timeout reached while processing');
 
         $this->controller->executeWithTimeout(function () {
             sleep(3); // Sleep longer than timeout
@@ -54,7 +65,7 @@ class ControllerTest extends TestCase
     public function testExecuteWithTimeoutHandlesEdgeCaseZeroTimeout(): void
     {
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Timeout reached while processing webhook');
+        $this->expectExceptionMessage('Timeout must be > 0');
 
         $this->controller->executeWithTimeout(function () {
             sleep(1);

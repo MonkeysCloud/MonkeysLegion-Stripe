@@ -2,15 +2,18 @@
 
 namespace MonkeysLegion\Stripe\Tests\Unit\Middleware;
 
+use MonkeysLegion\Stripe\Enum\Stages;
+use MonkeysLegion\Stripe\Exceptions\EventAlreadyProcessedException;
 use MonkeysLegion\Stripe\Tests\TestCase;
 use MonkeysLegion\Stripe\Middleware\WebhookMiddleware;
 use MonkeysLegion\Stripe\Storage\MemoryIdempotencyStore;
 use Stripe\Exception\SignatureVerificationException;
-use ReflectionProperty;
+use PHPUnit\Framework\MockObject\MockObject;
 
 class WebhookMiddlewareTest extends TestCase
 {
     private WebhookMiddleware $middleware;
+    /** @var MemoryIdempotencyStore&MockObject */
     private MemoryIdempotencyStore $idempotencyStore;
 
     protected function setUp(): void
@@ -27,7 +30,7 @@ class WebhookMiddlewareTest extends TestCase
             300, // High tolerance for testing
             $this->idempotencyStore,
             3600,
-            true // Test mode
+            Stages::TESTING // Test mode
         );
     }
 
@@ -49,22 +52,22 @@ class WebhookMiddlewareTest extends TestCase
             ->willReturn(true);
 
         // Expect the exception about already processed
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Event already processed');
+        $this->expectException(EventAlreadyProcessedException::class);
+        $this->expectExceptionMessage('Event already processed: ' . $eventId);
 
         // This would fail with actual Stripe verification, but we're testing idempotency
         try {
             $this->middleware->verifyAndProcess($payload, 'fake_signature');
         } catch (SignatureVerificationException $e) {
             // If this happens first, rethrow as the test expected a different exception
-            throw new \InvalidArgumentException('Event already processed: ' . $eventId);
+            throw new EventAlreadyProcessedException($eventId);
         }
     }
 
     public function testSetTestMode(): void
     {
         // Switch to live mode
-        $this->middleware->setTestMode(false);
+        $this->middleware->setStageMode(Stages::PROD);
 
         // This should use the live webhook secret now
         // We can't directly test this without mocking Webhook::constructEvent,
@@ -101,7 +104,7 @@ class WebhookMiddlewareTest extends TestCase
             300,
             $this->idempotencyStore,
             3600,
-            true // Test mode requires test key
+            Stages::TESTING // Test mode requires test key
         );
     }
 }

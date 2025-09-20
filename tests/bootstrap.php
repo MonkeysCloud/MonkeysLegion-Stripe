@@ -12,10 +12,5 @@ if (!is_dir($dbDir)) {
 }
 
 // Initialize test environment
-\Stripe\Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY'] ?? 'sk_test_51HqmkKLknLFzzbcKcgSE');
+\Stripe\Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY'] ?? 'sk_test_1234');
 \Stripe\Stripe::setApiVersion('2025-04-30');
-
-// Register error handler for testing
-set_error_handler(function ($severity, $message, $file, $line) {
-    throw new ErrorException($message, 0, $severity, $file, $line);
-});

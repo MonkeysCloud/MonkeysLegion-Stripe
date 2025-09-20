@@ -7,15 +7,13 @@ use MonkeysLegion\Stripe\Client\StripeGateway;
 use PHPUnit\Framework\MockObject\MockObject;
 use Stripe\PaymentIntent;
 use Stripe\Refund;
-use Stripe\Collection;
 use Stripe\SearchResult;
-use Stripe\Exception\CardException;
-use Stripe\Exception\ApiErrorException;
 use Stripe\Service\PaymentIntentService;
 use Stripe\StripeClient;
 
 class StripeGatewayTest extends TestCase
 {
+    /** @var StripeGateway|MockObject */
     private StripeGateway $gateway;
     /** @var \Stripe\StripeClient|MockObject */
     private $stripeMock;
