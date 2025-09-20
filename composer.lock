@@ -1232,16 +1232,16 @@
         },
         {
             "name": "monkeyscloud/monkeyslegion-database",
-            "version": "1.0.1",
+            "version": "1.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/MonkeysCloud/MonkeysLegion-Database.git",
-                "reference": "10e9b48c22cdb11b053fa2b4270adf4458562986"
+                "reference": "cf1a06abeea601b3a7c29642dfa4f10268507e8c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/MonkeysCloud/MonkeysLegion-Database/zipball/10e9b48c22cdb11b053fa2b4270adf4458562986",
-                "reference": "10e9b48c22cdb11b053fa2b4270adf4458562986",
+                "url": "https://api.github.com/repos/MonkeysCloud/MonkeysLegion-Database/zipball/cf1a06abeea601b3a7c29642dfa4f10268507e8c",
+                "reference": "cf1a06abeea601b3a7c29642dfa4f10268507e8c",
                 "shasum": ""
             },
             "require": {
@@ -1276,9 +1276,9 @@
             "description": "Native PDO-powered MySQL 8.4 connection and query helpers.",
             "support": {
                 "issues": "https://github.com/MonkeysCloud/MonkeysLegion-Database/issues",
-                "source": "https://github.com/MonkeysCloud/MonkeysLegion-Database/tree/1.0.1"
+                "source": "https://github.com/MonkeysCloud/MonkeysLegion-Database/tree/1.0.2"
             },
-            "time": "2025-08-24T16:47:42+00:00"
+            "time": "2025-09-20T17:08:56+00:00"
         },
         {
             "name": "monkeyscloud/monkeyslegion-dev-server",
@@ -3636,16 +3636,16 @@
         },
         {
             "name": "phpunit/php-code-coverage",
-            "version": "12.3.7",
+            "version": "12.3.8",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/php-code-coverage.git",
-                "reference": "bbede0f5593dad37af3be6a6f8e6ae1885e8a0a9"
+                "reference": "99e692c6a84708211f7536ba322bbbaef57ac7fc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/bbede0f5593dad37af3be6a6f8e6ae1885e8a0a9",
-                "reference": "bbede0f5593dad37af3be6a6f8e6ae1885e8a0a9",
+                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/99e692c6a84708211f7536ba322bbbaef57ac7fc",
+                "reference": "99e692c6a84708211f7536ba322bbbaef57ac7fc",
                 "shasum": ""
             },
             "require": {
@@ -3701,7 +3701,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/php-code-coverage/issues",
                 "security": "https://github.com/sebastianbergmann/php-code-coverage/security/policy",
-                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/12.3.7"
+                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/12.3.8"
             },
             "funding": [
                 {
@@ -3721,7 +3721,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2025-09-10T09:59:06+00:00"
+            "time": "2025-09-17T11:31:43+00:00"
         },
         {
             "name": "phpunit/php-file-iterator",
