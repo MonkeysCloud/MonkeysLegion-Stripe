@@ -144,7 +144,7 @@ class StripeServiceProvider implements ProviderInterface
                 $webhook_tolerance,     // int
                 $idempotencyStore,      // store
                 $webhook_default_ttl,   // TTL
-                $this->getStage()       // current stage
+                self::getStage()       // current stage
             );
         });
 
@@ -239,7 +239,7 @@ class StripeServiceProvider implements ProviderInterface
         return is_array($content) ? $content : [];
     }
 
-    private function getStage(): Stages
+    private static function getStage(): Stages
     {
         $envStage = $_ENV['APP_ENV'] ?? 'dev';
         return Stages::tryFrom($envStage) ?? Stages::DEV;
