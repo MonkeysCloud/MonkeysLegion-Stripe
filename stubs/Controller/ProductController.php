@@ -8,7 +8,6 @@ use MonkeysLegion\Router\Attributes\Route;
 use MonkeysLegion\Http\Message\Response;
 use MonkeysLegion\Http\Message\Stream;
 use MonkeysLegion\Stripe\Client\Product;
-use MonkeysLegion\Stripe\Service\ServiceContainer;
 use MonkeysLegion\Template\Renderer;
 
 /**
@@ -16,12 +15,7 @@ use MonkeysLegion\Template\Renderer;
  */
 final class ProductController
 {
-    private $ProductService;
-
-    public function __construct(private Renderer $renderer)
-    {
-        $this->ProductService = ML_CONTAINER->get(Product::class);
-    }
+    public function __construct(private Product $ProductService) {}
 
     /**
      * Create a Stripe Product.

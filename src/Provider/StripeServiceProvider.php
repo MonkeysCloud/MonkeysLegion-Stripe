@@ -81,7 +81,7 @@ class StripeServiceProvider implements ProviderInterface
      */
     private static function registerDatabaseServices(ServiceContainer $container, array $dbConfig): void
     {
-        $container->set(ConnectionInterface::class, fn() => new Connection($dbConfig));
+        $container->set(ConnectionInterface::class, fn() => new ConnectionInterface($dbConfig));
 
         /** @var ConnectionInterface $conn */
         $conn = $container->get(ConnectionInterface::class);

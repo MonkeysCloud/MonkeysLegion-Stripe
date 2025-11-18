@@ -17,16 +17,13 @@ use MonkeysLegion\Template\Renderer;
  */
 final class StripeController
 {
-    private $StripeGateway;
-    private $SetupIntentService;
-    private $CheckoutSessionService;
 
-    public function __construct(private Renderer $renderer)
-    {
-        $this->StripeGateway = ML_CONTAINER->get(StripeGateway::class);
-        $this->SetupIntentService = ML_CONTAINER->get(SetupIntentService::class);
-        $this->CheckoutSessionService = ML_CONTAINER->get(CheckoutSession::class);
-    }
+
+    public function __construct(
+        private StripeGateway $StripeGateway,
+        private SetupIntentService $SetupIntentService,
+        private CheckoutSession $CheckoutSessionService
+    ) {}
 
     /**
      * Create a Stripe PaymentIntent and return the client secret.

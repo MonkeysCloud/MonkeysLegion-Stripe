@@ -24,14 +24,12 @@ use MonkeysLegion\Template\Renderer;
  */
 final class WebhookController
 {
-    private $StripeWebhook;
     private string $logFile;
 
-    public function __construct(private Renderer $renderer)
-    {
-        // Initialize the Stripe webhook handler from ML_CONTAINER
-        $this->StripeWebhook = ML_CONTAINER->get(WebhookWebhookController::class);
-
+    public function __construct(
+        private Renderer $renderer,
+        private WebhookWebhookController $stripeWebhook
+    ) {
         // Set up logging directory and file
         $this->logFile = base_path('var/log/stripe_webhooks.log');
 
@@ -99,7 +97,7 @@ final class WebhookController
             // - Check idempotency store for duplicates
             // - Parse the event data
             // - Call our processWebhookEvent callback
-            $this->StripeWebhook->handle(
+            $this->stripeWebhook->handle(
                 $payload,
                 $sigHeader,
                 [$this, 'processWebhookEvent']  // Callback to process verified events
@@ -271,7 +269,7 @@ final class WebhookController
     )]
     public function removeEvent(string $eventId): Response
     {
-        $this->StripeWebhook->removeProcessedEvent($eventId);
+        $this->stripeWebhook->removeProcessedEvent($eventId);
 
         return new Response(
             Stream::createFromString(json_encode(['status' => 'event_removed', 'event_id' => $eventId])),
@@ -293,7 +291,7 @@ final class WebhookController
     )]
     public function clearIdempotencyStore(): Response
     {
-        $this->StripeWebhook->clearProcessedEvents();
+        $this->stripeWebhook->clearProcessedEvents();
 
         return new Response(
             Stream::createFromString(json_encode(['status' => 'store_cleared'])),
