@@ -34,3 +34,9 @@
 Thumbs.db
 phpunit.xml.backup
 phpunit.xml.bak
+
+# Composer Lock
+/composer.lock
+
+#coverage reports
+tests/coverage/*

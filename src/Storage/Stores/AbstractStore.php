@@ -23,6 +23,6 @@ abstract class AbstractStore
                 CHECK (json_valid(`data`))
             );";
 
-        $this->queryBuilder->exec($sql);
+        $this->queryBuilder->executeRaw($sql);
     }
 }
