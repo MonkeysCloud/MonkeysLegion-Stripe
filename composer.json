@@ -12,9 +12,6 @@
     "billing",
     "psr"
   ],
-  "bin": [
-    "bin/key-helper"
-  ],
   "authors": [
     {
       "name": "MonkeysCloud Team",
