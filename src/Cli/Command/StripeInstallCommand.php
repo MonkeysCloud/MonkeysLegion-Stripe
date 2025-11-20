@@ -7,6 +7,7 @@ namespace MonkeysLegion\Stripe\Cli\Command;
 use FilesystemIterator;
 use MonkeysLegion\Cli\Console\Attributes\Command as CommandAttr;
 use MonkeysLegion\Cli\Console\Command;
+use MonkeysLegion\Cli\Console\Traits\Cli;
 use MonkeysLegion\Cli\Command\MakerHelpers;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -19,11 +20,18 @@ use RecursiveIteratorIterator;
 final class StripeInstallCommand extends Command
 {
     use MakerHelpers;
+    use Cli;
 
     public function handle(): int
     {
         $projectRoot = base_path();
         $stubDir = __DIR__ . '/../../../stubs';
+
+        $this->cliLine()
+            ->info('Installing Stripe scaffolding...')
+            ->print();
+
+        $this->line('');
 
         // 1) Copy scaffolding files
         $map = [
@@ -46,7 +54,11 @@ final class StripeInstallCommand extends Command
         foreach ($map as $from => $to) {
             if (is_dir($from)) {
                 $this->mirror($from, $to);
-                $this->info('✓ Published directory ' . str_replace($projectRoot . '/', '', $to . "\n"));
+                $this->cliLine()
+                    ->add('✓ ', 'green', 'bold')
+                    ->add('Published directory ', 'white')
+                    ->add(str_replace($projectRoot . '/', '', $to), 'cyan')
+                    ->print();
                 continue;
             }
 
@@ -55,8 +67,14 @@ final class StripeInstallCommand extends Command
             }
 
             $this->copyFile($from, $to);
-            $this->info('✓ Published file ' . str_replace($projectRoot . '/', '', $to . "\n"));
+            $this->cliLine()
+                ->add('✓ ', 'green', 'bold')
+                ->add('Published file ', 'white')
+                ->add(str_replace($projectRoot . '/', '', $to), 'cyan')
+                ->print();
         }
+
+        $this->line('');
 
         // 2) Ensure .env contains Stripe keys
         $this->ensureEnvKeys($projectRoot);
@@ -70,7 +88,11 @@ final class StripeInstallCommand extends Command
         // 5) Add StripeServiceProvider to composer.json
         $this->addServiceProviderToComposer($projectRoot);
 
-        $this->line('<info>Stripe scaffolding and .env setup complete!</info>');
+        $this->line('');
+        $this->cliLine()
+            ->success('🎉 Stripe scaffolding and .env setup complete!')
+            ->print();
+
         return self::SUCCESS;
     }
 
@@ -83,14 +105,18 @@ final class StripeInstallCommand extends Command
     {
         $envFile = $projectRoot . '/.env';
         if (!file_exists($envFile)) {
-            $this->warn('.env file not found; skipping Stripe key injection.');
+            $this->cliLine()
+                ->warning('.env file not found; skipping Stripe key injection.')
+                ->print();
             return;
         }
 
         /** @var list<string>|false $lines */
         $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if (!$lines) {
-            $this->warn('.env file is empty; skipping Stripe key injection.');
+            $this->cliLine()
+                ->warning('.env file is empty; skipping Stripe key injection.')
+                ->print();
             return;
         }
         $required = [
@@ -126,7 +152,10 @@ final class StripeInstallCommand extends Command
         }
 
         if (empty($missing)) {
-            $this->info('All Stripe keys already present in .env.');
+            $this->cliLine()
+                ->add('✓ ', 'green', 'bold')
+                ->add('All Stripe keys already present in .env', 'white')
+                ->print();
             return;
         }
 
@@ -146,7 +175,12 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($envFile, "\n" . $append, FILE_APPEND);
-        $this->info('✓ Added missing Stripe keys to .env: ' . implode(', ', $missing) . "\n");
+
+        $this->cliLine()
+            ->add('✓ ', 'green', 'bold')
+            ->add('Added missing Stripe keys to .env: ', 'white')
+            ->add(implode(', ', $missing), 'cyan')
+            ->print();
     }
 
     /**
@@ -161,14 +195,18 @@ final class StripeInstallCommand extends Command
             ? "{$projectRoot}/config/auth.mlc"
             : "{$projectRoot}/config/app.mlc";
         if (!is_file($mlcFile)) {
-            $this->warn('config/app.mlc not found; skipping public path injection.');
+            $this->cliLine()
+                ->warning('config/app.mlc not found; skipping public path injection.')
+                ->print();
             return;
         }
 
         /** @var list<string>|false $lines */
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
-            $this->warn('Failed to read config/app.mlc; skipping public path injection.');
+            $this->cliLine()
+                ->warning('Failed to read config/app.mlc; skipping public path injection.')
+                ->print();
             return;
         }
         $toAdd = ['/', '/stripe/*', '/docs', '/docs/*', '/success', '/cancel'];
@@ -182,7 +220,9 @@ final class StripeInstallCommand extends Command
             }
         }
         if ($authStart === null) {
-            $this->warn('No `auth {` section in app.mlc; cannot inject public_paths.');
+            $this->cliLine()
+                ->warning('No `auth {` section in app.mlc; cannot inject public_paths.')
+                ->print();
             return;
         }
         // find matching closing brace
@@ -197,7 +237,9 @@ final class StripeInstallCommand extends Command
             }
         }
         if ($authEnd === null) {
-            $this->warn('Could not find end of auth { … } block.');
+            $this->cliLine()
+                ->warning('Could not find end of auth { … } block.')
+                ->print();
             return;
         }
 
@@ -253,7 +295,7 @@ final class StripeInstallCommand extends Command
         // 5) Merge & dedupe
         $merged = array_values(array_unique(array_merge($exist, $toAdd)));
 
-        // 6) Build the new block in “public_paths = [ … ]” style
+        // 6) Build the new block in "public_paths = [ … ]" style
         $newBlock = [];
         $newBlock[] = $indent . 'public_paths = [';
         $lastIndex  = count($merged) - 1;
@@ -288,7 +330,13 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $out) . "\n");
-        $this->info('✓ Ensured config/app.mlc › auth.public_paths = [ … ] contains all Stripe/docs paths.' . "\n");
+
+        $this->cliLine()
+            ->add('✓ ', 'green', 'bold')
+            ->add('Ensured ', 'white')
+            ->add('config/app.mlc › auth.public_paths', 'cyan')
+            ->add(' contains all Stripe/docs paths', 'white')
+            ->print();
     }
 
     /**
@@ -301,14 +349,18 @@ final class StripeInstallCommand extends Command
     {
         $mlcFile = "{$projectRoot}/config/app.mlc";
         if (!is_file($mlcFile)) {
-            $this->warn('config/app.mlc not found; skipping stripe section injection.');
+            $this->cliLine()
+                ->warning('config/app.mlc not found; skipping stripe section injection.')
+                ->print();
             return;
         }
 
         /** @var list<string>|false $lines */
         $lines = file($mlcFile, FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
-            $this->warn('Failed to read config/app.mlc; skipping stripe section injection.');
+            $this->cliLine()
+                ->warning('Failed to read config/app.mlc; skipping stripe section injection.')
+                ->print();
             return;
         }
 
@@ -409,7 +461,13 @@ final class StripeInstallCommand extends Command
         }
 
         file_put_contents($mlcFile, implode("\n", $lines) . "\n");
-        $this->info('✓ Added/merged stripe { … } section in config/app.mlc.' . "\n");
+
+        $this->cliLine()
+            ->add('✓ ', 'green', 'bold')
+            ->add('Added/merged ', 'white')
+            ->add('stripe { … }', 'cyan')
+            ->add(' section in config/app.mlc', 'white')
+            ->print();
     }
 
     /**
@@ -421,19 +479,25 @@ final class StripeInstallCommand extends Command
     {
         $composerFile = "{$projectRoot}/composer.json";
         if (!is_file($composerFile)) {
-            $this->warn('composer.json not found; cannot add StripeServiceProvider.');
+            $this->cliLine()
+                ->warning('composer.json not found; cannot add StripeServiceProvider.')
+                ->print();
             return;
         }
 
         // Read the composer.json file
         $json = file_get_contents($composerFile);
         if ($json === false) {
-            $this->warn('Failed to read composer.json; cannot add StripeServiceProvider.');
+            $this->cliLine()
+                ->warning('Failed to read composer.json; cannot add StripeServiceProvider.')
+                ->print();
             return;
         }
         $composerData = json_decode($json, true);
         if ($composerData === null || !is_array($composerData)) {
-            $this->warn('Failed to parse composer.json: ' . json_last_error_msg());
+            $this->cliLine()
+                ->warning('Failed to parse composer.json: ' . json_last_error_msg())
+                ->print();
             return;
         }
 
@@ -455,7 +519,11 @@ final class StripeInstallCommand extends Command
 
         // Check if the provider is already in the list
         if (in_array($provider, $composerData['extra']['monkeyslegion']['providers'])) {
-            $this->info('StripeServiceProvider already registered in composer.json');
+            $this->cliLine()
+                ->add('✓ ', 'green', 'bold')
+                ->add('StripeServiceProvider already registered in ', 'white')
+                ->add('composer.json', 'cyan')
+                ->print();
             return;
         }
 
@@ -466,7 +534,13 @@ final class StripeInstallCommand extends Command
         $jsonOptions = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
         file_put_contents($composerFile, json_encode($composerData, $jsonOptions) . "\n");
 
-        $this->info('✓ Added StripeServiceProvider to composer.json › extra.monkeyslegion.providers' . "\n");
+        $this->cliLine()
+            ->add('✓ ', 'green', 'bold')
+            ->add('Added ', 'white')
+            ->add('StripeServiceProvider', 'cyan')
+            ->add(' to ', 'white')
+            ->add('composer.json › extra.monkeyslegion.providers', 'yellow')
+            ->print();
     }
 
     /**
@@ -509,7 +583,11 @@ final class StripeInstallCommand extends Command
     {
         $overwrite = $this->confirm(str_replace($projectRoot . '/', '', $to) . ' exists, overwrite?', false);
         if (!$overwrite) {
-            $this->line('↷ Skipped ' . str_replace($projectRoot . '/', '', $to));
+            $this->cliLine()
+                ->add('↷ ', 'yellow')
+                ->add('Skipped ', 'gray')
+                ->add(str_replace($projectRoot . '/', '', $to), 'cyan')
+                ->print();
         }
         return $overwrite;
     }
@@ -525,13 +603,5 @@ final class StripeInstallCommand extends Command
             return $default;
         }
         return in_array(strtolower($answer), ['y', 'yes'], true);
-    }
-
-    /**
-     * Output a warning message to the console.
-     */
-    private function warn(string $message): void
-    {
-        $this->line('<comment>' . $message . '</comment>');
     }
 }
