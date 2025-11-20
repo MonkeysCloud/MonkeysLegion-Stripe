@@ -2,7 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Client;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 use RuntimeException;
@@ -12,16 +12,16 @@ abstract class StripeWrapper
     protected ?StripeClient $stripe;
     protected array $stripeClients;
     protected bool $test_mode = true;
-    private ?FrameworkLoggerInterface $logger;
+    private ?MonkeysLoggerInterface $logger;
 
-    public function __construct(array $stripeClients = [], bool $test_mode = true, ?FrameworkLoggerInterface $logger = null)
+    public function __construct(array $stripeClients = [], bool $test_mode = true, ?MonkeysLoggerInterface $logger = null)
     {
         $this->stripeClients = $stripeClients;
         $this->setTestMode($test_mode);
         $this->logger = $logger;
     }
 
-    public function setLogger(FrameworkLoggerInterface $logger): void
+    public function setLogger(MonkeysLoggerInterface $logger): void
     {
         $this->logger = $logger;
     }

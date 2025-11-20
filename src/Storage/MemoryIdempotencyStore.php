@@ -2,7 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Storage;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Interface\IdempotencyStoreInterface;
 use MonkeysLegion\Stripe\Storage\Stores\InMemoryStore;
@@ -13,7 +13,7 @@ class MemoryIdempotencyStore implements IdempotencyStoreInterface
 {
     private IdempotencyStoreInterface $store;
 
-    public function __construct(?QueryBuilder $queryBuilder = null, ?FrameworkLoggerInterface $logger = null, string $tableName = 'idempotency_store')
+    public function __construct(?QueryBuilder $queryBuilder = null, ?MonkeysLoggerInterface $logger = null, string $tableName = 'idempotency_store')
     {
         $appEnv = $_ENV['APP_ENV'] ?? 'dev';
         $this->store = match ($appEnv) {
@@ -23,7 +23,7 @@ class MemoryIdempotencyStore implements IdempotencyStoreInterface
         };
     }
 
-    public function useProdStore(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', ?FrameworkLoggerInterface $logger = null): void
+    public function useProdStore(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', ?MonkeysLoggerInterface $logger = null): void
     {
         $this->store = new MySQLStore($queryBuilder, $tableName, $logger);
     }

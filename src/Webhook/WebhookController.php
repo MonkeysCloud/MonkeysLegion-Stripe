@@ -2,7 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Webhook;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use MonkeysLegion\Stripe\Controller\Controller;
 use MonkeysLegion\Stripe\Enum\Stages;
 use MonkeysLegion\Stripe\Exceptions\EventAlreadyProcessedException;
@@ -33,7 +33,7 @@ class WebhookController extends Controller
         private WebhookMiddleware $webhookMiddleware,
         private MemoryIdempotencyStore $idempotencyStore,
         ServiceContainer $c,
-        private ?FrameworkLoggerInterface $logger = null
+        private ?MonkeysLoggerInterface $logger = null
     ) {
         // Set the app stage
         $this->stage = $this->webhookMiddleware->getStage();

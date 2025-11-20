@@ -2,12 +2,13 @@
 
 namespace MonkeysLegion\Stripe\Provider;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
-use MonkeysLegion\Core\Logger\MonkeyLogger;
 use MonkeysLegion\Core\Provider\ProviderInterface;
 use MonkeysLegion\Database\Contracts\ConnectionInterface;
+use MonkeysLegion\Database\Factory\ConnectionFactory;
 use MonkeysLegion\Database\MySQL\Connection;
 use MonkeysLegion\DI\ContainerBuilder;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
+use MonkeysLegion\Logger\Logger\NullLogger;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Client\{CheckoutSession, Product, SetupIntentService, StripeGateway, Subscription};
 use MonkeysLegion\Stripe\Enum\Stages;
@@ -24,8 +25,8 @@ class StripeServiceProvider implements ProviderInterface
     public static function register(string $root, ContainerBuilder $c): void
     {
         $in_container = ServiceContainer::getInstance();
-        /** @var FrameworkLoggerInterface $logger */
-        $logger = $in_container->get(FrameworkLoggerInterface::class) ?? new MonkeyLogger();
+        /** @var MonkeysLoggerInterface $logger */
+        $logger = $in_container->get(MonkeysLoggerInterface::class) ?? new NullLogger();
 
         try {
             $stripeConfigPath = $root . '/config/stripe.php';
@@ -81,8 +82,7 @@ class StripeServiceProvider implements ProviderInterface
      */
     private static function registerDatabaseServices(ServiceContainer $container, array $dbConfig): void
     {
-        $container->set(ConnectionInterface::class, fn() => new ConnectionInterface($dbConfig));
-
+        $container->set(ConnectionInterface::class, fn() => ConnectionFactory::create($dbConfig));
         /** @var ConnectionInterface $conn */
         $conn = $container->get(ConnectionInterface::class);
         $container->set(QueryBuilder::class, fn() => new QueryBuilder($conn));
@@ -108,12 +108,11 @@ class StripeServiceProvider implements ProviderInterface
      *
      * @param ServiceContainer $container
      * @param array<string, mixed> $stripeConfig
-     * @param FrameworkLoggerInterface $logger
      */
     private static function registerWebhookServices(
         ServiceContainer $container,
         array $stripeConfig,
-        FrameworkLoggerInterface $logger
+        MonkeysLoggerInterface $logger
     ): void {
         // Register MemoryIdempotencyStore
         $container->set(MemoryIdempotencyStore::class, function () use ($container, $logger) {
@@ -169,7 +168,7 @@ class StripeServiceProvider implements ProviderInterface
      */
     private static function registerStripeFeatureServices(
         ServiceContainer $container,
-        FrameworkLoggerInterface $logger
+        MonkeysLoggerInterface $logger
     ): void {
         $clients = [
             $container->get('stripe_client_test'),
@@ -219,10 +218,10 @@ class StripeServiceProvider implements ProviderInterface
         $builder->addDefinitions($definitions);
     }
 
-    public static function setLogger(FrameworkLoggerInterface $logger): void
+    public static function setLogger(MonkeysLoggerInterface $logger): void
     {
         $container = ServiceContainer::getInstance();
-        $container->set(FrameworkLoggerInterface::class, fn() => $logger);
+        $container->set(MonkeysLoggerInterface::class, fn() => $logger);
     }
 
     /**

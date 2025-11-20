@@ -2,13 +2,13 @@
 
 namespace MonkeysLegion\Stripe\Storage\Stores;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use MonkeysLegion\Query\QueryBuilder;
 use MonkeysLegion\Stripe\Interface\IdempotencyStoreInterface;
 
 class MySQLStore extends AbstractStore implements IdempotencyStoreInterface
 {
-    public function __construct(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', private ?FrameworkLoggerInterface $logger = null)
+    public function __construct(QueryBuilder $queryBuilder, string $tableName = 'idempotency_store', private ?MonkeysLoggerInterface $logger = null)
     {
         $this->queryBuilder = $queryBuilder;
         $this->tableName = $tableName;

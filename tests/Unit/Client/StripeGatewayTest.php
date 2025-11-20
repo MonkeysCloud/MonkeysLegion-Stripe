@@ -2,6 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Tests\Unit\Client;
 
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use MonkeysLegion\Stripe\Tests\TestCase;
 use MonkeysLegion\Stripe\Client\StripeGateway;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -26,7 +27,7 @@ class StripeGatewayTest extends TestCase
     {
         parent::setUp();
 
-        $loggerMock = $this->createMock(\MonkeysLegion\Core\Contracts\FrameworkLoggerInterface::class);
+        $loggerMock = $this->createMock(MonkeysLoggerInterface::class);
 
         $this->paymentIntentServiceMock = $this->getMockBuilder(\Stripe\Service\PaymentIntentService::class)
             ->disableOriginalConstructor()

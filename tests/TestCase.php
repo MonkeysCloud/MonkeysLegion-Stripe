@@ -2,7 +2,7 @@
 
 namespace MonkeysLegion\Stripe\Tests;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
+use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
 use MonkeysLegion\Stripe\Service\ServiceContainer;
 
@@ -46,9 +46,9 @@ abstract class TestCase extends PHPUnitTestCase
         return $container;
     }
 
-    protected function createMockLogger(): FrameworkLoggerInterface
+    protected function createMockLogger(): MonkeysLoggerInterface
     {
-        return $this->getMockBuilder(FrameworkLoggerInterface::class)->getMock();
+        return $this->getMockBuilder(MonkeysLoggerInterface::class)->getMock();
     }
 
     protected function getTestWebhookPayload(): string
