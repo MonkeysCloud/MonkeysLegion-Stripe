@@ -21,9 +21,10 @@
   ],
   "require": {
     "php": "^8.4",
-    "guzzlehttp/guzzle": "^7.9",
-    "monkeyscloud/monkeyslegion-core": "^1.0",
+    "guzzlehttp/psr7": "^2.7",
     "monkeyscloud/monkeyslegion-cli": "^1.0",
+    "monkeyscloud/monkeyslegion-core": "^1.0",
+    "monkeyscloud/monkeyslegion-http-client": "^1.0",
     "monkeyscloud/monkeyslegion-query": "^1.0",
     "psr/http-client": "^1.0",
     "stripe/stripe-php": "^17.3"
